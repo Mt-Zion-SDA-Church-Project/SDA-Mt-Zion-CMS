@@ -1,0 +1,237 @@
+import React, { useEffect, useState } from 'react';
+import { supabase } from '../../../lib/supabase';
+
+const AddVisitor: React.FC = () => {
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    phone: '',
+    email: '',
+    address: '',
+    dateOfBirth: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const load = async () => {
+    const { data, error } = await supabase
+      .from('visitors')
+      .select('id, first_name, last_name, phone, address, date_of_birth, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (!error) setRows(data || []);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setMessage(null);
+    setError(null);
+    // Client-side required validation
+    if (!form.firstName || !form.lastName || !form.phone || !form.email || !form.address || !form.dateOfBirth) {
+      setSubmitting(false);
+      setError('All fields are required. Please fill in every field.');
+      return;
+    }
+    try {
+      const payload: any = {
+        first_name: form.firstName,
+        last_name: form.lastName || null,
+        phone: form.phone || null,
+        email: form.email || null,
+        address: form.address || null,
+        date_of_birth: form.dateOfBirth || null,
+      };
+      if (editingId) {
+        const { error: updErr } = await supabase.from('visitors').update(payload).eq('id', editingId);
+        if (updErr) throw updErr;
+        setMessage('Visitor updated');
+      } else {
+        const { error: insErr } = await supabase.from('visitors').insert(payload).single();
+        if (insErr) throw insErr;
+        setMessage('Visitor saved');
+      }
+      setForm({ firstName: '', lastName: '', phone: '', email: '', address: '', dateOfBirth: '' });
+      setEditingId(null);
+      load();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save visitor');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEdit = (v: any) => {
+    setEditingId(v.id);
+    setForm({
+      firstName: v.first_name || '',
+      lastName: v.last_name || '',
+      phone: v.phone || '',
+      email: v.email || '',
+      address: v.address || '',
+      dateOfBirth: v.date_of_birth ? new Date(v.date_of_birth).toISOString().slice(0,10) : '',
+    });
+    setMessage(null);
+    setError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ firstName: '', lastName: '', phone: '', email: '', address: '', dateOfBirth: '' });
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    setError(null);
+    const { error } = await supabase.from('visitors').delete().in('id', selectedIds);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    setSelectedIds([]);
+    setMessage('Deleted successfully');
+    load();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-800">Add Visitor</h1>
+        <p className="text-gray-600">Register a new visitor and manage the list</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Left: Register form */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="px-4 py-3 border-b bg-gray-50 flex items-center gap-2">
+            <span className="text-sm font-semibold">Register New Visitor</span>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">First Name</label>
+              <input required name="firstName" value={form.firstName} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Last Name</label>
+              <input required name="lastName" value={form.lastName} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Phone</label>
+              <input required name="phone" value={form.phone} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Email</label>
+              <input required type="email" name="email" value={form.email} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Date of Birth</label>
+              <input required type="date" name="dateOfBirth" value={form.dateOfBirth} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Address</label>
+              <input required name="address" value={form.address} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            </div>
+            {error && <div className="text-sm text-red-600">{error}</div>}
+            {message && <div className="text-sm text-green-600">{message}</div>}
+            <div className="flex items-center gap-2">
+              <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60">{submitting ? (editingId ? 'Updating...' : 'Saving...') : (editingId ? 'Update' : 'Save')}</button>
+              {editingId && (
+                <button type="button" onClick={cancelEdit} className="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* Right: Visitors list */}
+        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+          <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+            <span className="text-sm font-semibold">Church Visitor(s) List</span>
+            <div className="text-xs text-gray-600">Number of Visitors: <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-white">{rows.length}</span></div>
+          </div>
+
+          <div className="px-4 py-3 flex items-center gap-3">
+            <button onClick={handleDeleteSelected} disabled={selectedIds.length === 0} className="px-3 py-2 bg-red-600 text-white rounded text-sm disabled:opacity-60">Delete</button>
+            <div className="flex items-center gap-2 ml-2">
+              <select className="border rounded px-2 py-1 text-sm">
+                {[10, 25, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <span className="text-sm text-gray-600">records per page</span>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-sm text-gray-600">Search:</span>
+              <input className="border rounded px-2 py-1 text-sm w-60" />
+            </div>
+          </div>
+
+          <div className="px-4 pb-4">
+            <table className="w-full text-sm border border-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left p-2 border-b w-10"> </th>
+                  <th className="text-left p-2 border-b">NAME</th>
+                  <th className="text-left p-2 border-b">MOBILE</th>
+                  <th className="text-left p-2 border-b">ADDRESS</th>
+                  <th className="text-left p-2 border-b">DATE OF BIRTH</th>
+                  <th className="text-left p-2 border-b w-24"> </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 ? (
+                  <tr>
+                    <td className="p-2 border-b" />
+                    <td className="p-2 border-b text-gray-600" colSpan={4}>No data available in table</td>
+                    <td className="p-2 border-b" />
+                  </tr>
+                ) : (
+                  rows.map((v) => (
+                    <tr key={v.id}>
+                      <td className="p-2 border-b"><input type="checkbox" checked={selectedIds.includes(v.id)} onChange={() => toggleSelect(v.id)} /></td>
+                      <td className="p-2 border-b">{v.first_name} {v.last_name || ''}</td>
+                      <td className="p-2 border-b">{v.phone || '—'}</td>
+                      <td className="p-2 border-b">{v.address || '—'}</td>
+                      <td className="p-2 border-b">{v.date_of_birth ? new Date(v.date_of_birth).toLocaleDateString() : '—'}</td>
+                      <td className="p-2 border-b text-right">
+                        <button onClick={() => handleEdit(v)} className="px-3 py-1 bg-green-600 text-white rounded text-xs">Edit</button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+
+            <div className="flex items-center justify-between text-sm text-gray-600 mt-3">
+              <div>Showing 0 to 0 of 0 entries</div>
+              <div className="flex items-center gap-2">
+                <button className="px-2 py-1 border rounded text-gray-500" disabled>Previous</button>
+                <button className="px-2 py-1 border rounded text-gray-500" disabled>Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AddVisitor;
+
+
+
+

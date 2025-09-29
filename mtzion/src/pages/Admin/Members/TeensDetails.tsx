@@ -13,6 +13,52 @@ type ChildRow = {
 };
 
 const TeensDetails: React.FC = () => {
+  const toDisplay = (value: any): string => {
+    if (Array.isArray(value)) return value.filter(Boolean).join(', ');
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      // Handle Postgres array literal format e.g. {Seeta,"Kampala"}
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        const inner = trimmed.slice(1, -1);
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        let escaped = false;
+        for (let i = 0; i < inner.length; i++) {
+          const ch = inner[i];
+          if (escaped) {
+            current += ch;
+            escaped = false;
+          } else if (ch === '\\') {
+            escaped = true;
+          } else if (ch === '"') {
+            inQuotes = !inQuotes;
+          } else if (ch === ',' && !inQuotes) {
+            const token = current.trim();
+            result.push(token.replace(/^"|"$/g, ''));
+            current = '';
+          } else {
+            current += ch;
+          }
+        }
+        if (current.length > 0) {
+          const token = current.trim();
+          result.push(token.replace(/^"|"$/g, ''));
+        }
+        return result.filter(Boolean).join(', ');
+      }
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed.filter(Boolean).join(', ');
+        } catch (_) {
+          // fall through
+        }
+      }
+    }
+    return String(value);
+  };
   const [rows, setRows] = useState<ChildRow[]>([]);
   const [query, setQuery] = useState('');
   const [pageSize, setPageSize] = useState(10);
@@ -27,36 +73,20 @@ const TeensDetails: React.FC = () => {
       try {
         const { data: children, error: childError } = await supabase
           .from('teens')
-          .select('id, member_id, parent_member_id');
+          .select('id, first_name, middle_name, last_name, gender, date_of_birth, address, place_of_birth, parent_name, mobile');
         if (childError) throw childError;
-
-        const memberIds = Array.from(
-          new Set((children || []).flatMap((c: any) => [c.member_id, c.parent_member_id]).filter(Boolean))
-        );
-        let membersById = new Map<string, any>();
-        if (memberIds.length > 0) {
-          const { data: members, error: membersError } = await supabase
-            .from('members')
-            .select('id, first_name, last_name, phone, address, gender, place_of_birth, date_of_birth')
-            .in('id', memberIds);
-          if (membersError) throw membersError;
-          (members || []).forEach((m: any) => membersById.set(m.id, m));
-        }
-
-        const mapped: ChildRow[] = (children || []).map((c: any) => {
-          const m = membersById.get(c.member_id) || {};
-          const p = membersById.get(c.parent_member_id) || {};
-          return {
-            id: c.id,
-            name: [m.first_name, m.last_name].filter(Boolean).join(' ') || '',
-            gender: (m.gender || '').toString().replace(/^./, (char: string) => char.toUpperCase()),
-            placeOfBirth: m.place_of_birth || '',
-            birthday: m.date_of_birth || '',
-            parent: [p.first_name, p.last_name].filter(Boolean).join(' ') || '',
-            mobile: m.phone || '',
-            residence: m.address || '',
-          };
-        });
+        const mapped: ChildRow[] = (children || []).map((c: any) => ({
+          id: c.id,
+          name: [toDisplay(c.first_name), toDisplay(c.middle_name), toDisplay(c.last_name)]
+            .filter(Boolean)
+            .join(' '),
+          gender: toDisplay(c.gender).replace(/^./, (char: string) => char.toUpperCase()),
+          placeOfBirth: toDisplay(c.place_of_birth),
+          birthday: toDisplay(c.date_of_birth),
+          parent: toDisplay(c.parent_name),
+          mobile: toDisplay(c.mobile),
+          residence: toDisplay(c.address),
+        }));
         setRows(mapped);
       } catch (err: any) {
         setError(err.message || 'Failed to load children');
@@ -70,9 +100,6 @@ const TeensDetails: React.FC = () => {
     const channel = supabase
       .channel('teens-details-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'teens' }, () => {
-        load();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
         load();
       })
       .subscribe();
@@ -123,7 +150,10 @@ const TeensDetails: React.FC = () => {
     <div className="p-4">
       <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-800">Church Children List</h2>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-800">Church Children List</h2>
+            <p className="text-xs text-gray-500">Independent records - no login accounts required</p>
+          </div>
           <div className="text-xs text-gray-600">Number of Church Children: <span className="font-semibold">{data.length}</span></div>
         </div>
 

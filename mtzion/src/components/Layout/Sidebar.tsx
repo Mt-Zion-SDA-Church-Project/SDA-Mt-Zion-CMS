@@ -20,6 +20,7 @@ import {
   QrCode
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import logo from '../../assets/sda-logo.png';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -133,7 +134,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
     } flex-shrink-0`}>
       <div className="p-4">
         <div className="flex items-center space-x-3">
-          <img src="/logo.png" alt="Church logo" className="w-8 h-8 object-contain" />
+          <img src={logo} alt="SDA Mt. Zion Logo" className="w-16 h-16 object-contain" />
           {!isCollapsed && (
             <div>
               <h1 className="text-lg font-bold">SDA Mt. Zion</h1>

@@ -13,6 +13,53 @@ type ChildRow = {
 };
 
 const AddTeen: React.FC = () => {
+  const toDisplay = (value: any): string => {
+    if (Array.isArray(value)) return value.filter(Boolean).join(', ');
+    if (value === null || value === undefined) return '';
+    // Handle JSON-stringified single-element arrays like '["Masaka"]'
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      // Handle Postgres array literal format e.g. {Seeta,"Kampala"}
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        const inner = trimmed.slice(1, -1);
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        let escaped = false;
+        for (let i = 0; i < inner.length; i++) {
+          const ch = inner[i];
+          if (escaped) {
+            current += ch;
+            escaped = false;
+          } else if (ch === '\\') {
+            escaped = true;
+          } else if (ch === '"') {
+            inQuotes = !inQuotes;
+          } else if (ch === ',' && !inQuotes) {
+            const token = current.trim();
+            result.push(token.replace(/^"|"$/g, ''));
+            current = '';
+          } else {
+            current += ch;
+          }
+        }
+        if (current.length > 0) {
+          const token = current.trim();
+          result.push(token.replace(/^"|"$/g, ''));
+        }
+        return result.filter(Boolean).join(', ');
+      }
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed.filter(Boolean).join(', ');
+        } catch (_) {
+          // fall through to default string conversion
+        }
+      }
+    }
+    return String(value);
+  };
   const [form, setForm] = useState({
     firstName: '',
     surname: '',
@@ -38,9 +85,6 @@ const AddTeen: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'teens' }, () => {
         loadChildren();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
-        loadChildren();
-      })
       .subscribe();
 
     return () => {
@@ -54,36 +98,20 @@ const AddTeen: React.FC = () => {
     try {
       const { data: childrenData, error: childError } = await supabase
         .from('teens')
-        .select('id, member_id, parent_member_id');
+        .select('id, first_name, middle_name, last_name, gender, date_of_birth, address, place_of_birth, parent_name, mobile');
       if (childError) throw childError;
-
-      const memberIds = Array.from(
-        new Set((childrenData || []).flatMap((c: any) => [c.member_id, c.parent_member_id]).filter(Boolean))
-      );
-      let membersById = new Map<string, any>();
-      if (memberIds.length > 0) {
-        const { data: members, error: membersError } = await supabase
-          .from('members')
-          .select('id, first_name, last_name, phone, address, gender, place_of_birth, date_of_birth')
-          .in('id', memberIds);
-        if (membersError) throw membersError;
-        (members || []).forEach((m: any) => membersById.set(m.id, m));
-      }
-
-      const mapped: ChildRow[] = (childrenData || []).map((c: any) => {
-        const m = membersById.get(c.member_id) || {};
-        const p = membersById.get(c.parent_member_id) || {};
-        return {
-          id: c.id,
-          name: [m.first_name, m.last_name].filter(Boolean).join(' ') || '',
-          gender: (m.gender || '').toString().replace(/^./, (char: string) => char.toUpperCase()),
-          placeOfBirth: m.place_of_birth || '',
-          birthday: m.date_of_birth || '',
-          parent: [p.first_name, p.last_name].filter(Boolean).join(' ') || '',
-          mobile: m.phone || '',
-          residence: m.address || '',
-        };
-      });
+      const mapped: ChildRow[] = (childrenData || []).map((c: any) => ({
+        id: c.id,
+        name: [toDisplay(c.first_name), toDisplay(c.middle_name), toDisplay(c.last_name)]
+          .filter(Boolean)
+          .join(' '),
+        gender: toDisplay(c.gender).replace(/^./, (char: string) => char.toUpperCase()),
+        placeOfBirth: toDisplay(c.place_of_birth),
+        birthday: toDisplay(c.date_of_birth),
+        parent: toDisplay(c.parent_name),
+        mobile: toDisplay(c.mobile),
+        residence: toDisplay(c.address),
+      }));
       setChildren(mapped);
     } catch (err: any) {
       setError(err.message || 'Failed to load children');
@@ -109,35 +137,41 @@ const AddTeen: React.FC = () => {
         throw new Error('Please fill in all required fields (First Name, Last Name, Gender, Birthday)');
       }
 
-      // First, create the member record
-      const { data: memberData, error: memberError } = await supabase
-        .from('members')
-        .insert({
-          first_name: form.firstName,
-          last_name: form.lastName,
-          middle_name: form.surname || null,
-          gender: form.gender,
-          date_of_birth: form.birthday,
-          phone: form.mobile || null,
-          address: form.residence || null,
-          place_of_birth: form.placeOfBirth || null,
-          member_number: `CHILD-${Date.now()}`, // Generate unique member number
-          status: 'active'
-        })
-        .select('id')
-        .single();
+      // Insert directly into teens table using updated schema
+      const teenPayload: any = {
+        first_name: form.firstName,
+        last_name: form.lastName,
+        middle_name: form.surname || null,
+        gender: form.gender,
+        date_of_birth: form.birthday,
+        address: form.residence || null,
+        place_of_birth: form.placeOfBirth || null,
+        parent_name: form.parentsName || null,
+        mobile: form.mobile || null,
+      };
 
-      if (memberError) throw memberError;
-
-      // Then create the teen/child record
-      const { data: teenData, error: teenError } = await supabase
+      let { data: teenData, error: teenError } = await supabase
         .from('teens')
-        .insert({
-          member_id: memberData.id,
-          parent_member_id: null, // Will be set later when parent is identified
-        })
+        .insert(teenPayload)
         .select('id')
         .single();
+
+      // If schema has array-typed columns, retry by wrapping strings in single-element arrays
+      if (teenError && (teenError.message || '').toLowerCase().includes('malformed array literal')) {
+        const arrayWrapped: any = { ...teenPayload };
+        const maybeArrayKeys = ['first_name', 'middle_name', 'last_name', 'address', 'place_of_birth', 'parent_name', 'mobile'];
+        maybeArrayKeys.forEach((key) => {
+          const val = arrayWrapped[key];
+          if (typeof val === 'string' && val.length > 0) arrayWrapped[key] = [val];
+        });
+        const retry = await supabase
+          .from('teens')
+          .insert(arrayWrapped)
+          .select('id')
+          .single();
+        teenData = retry.data;
+        teenError = retry.error as any;
+      }
 
       if (teenError) throw teenError;
 
@@ -170,6 +204,9 @@ const AddTeen: React.FC = () => {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <form onSubmit={handleSubmit} className="p-6 bg-white rounded-lg shadow-md space-y-4">
         <h2 className="text-lg font-semibold text-gray-800">Register New Child</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Children are registered as independent entities and do not require login accounts.
+        </p>
         <div>
           <label className="block text-sm text-gray-600 mb-1">First Name *</label>
           <input name="firstName" value={form.firstName} onChange={handleChange} className="w-full border rounded px-3 py-2" required />
@@ -207,7 +244,7 @@ const AddTeen: React.FC = () => {
           <input name="parentsName" value={form.parentsName} onChange={handleChange} className="w-full border rounded px-3 py-2" />
         </div>
         <div>
-          <label className="block text-sm text-gray-600 mb-1">mobile number</label>
+          <label className="block text-sm text-gray-600 mb-1">Parents mobile name</label>
           <input name="mobile" value={form.mobile} onChange={handleChange} className="w-full border rounded px-3 py-2" />
         </div>
         {error && <div className="text-sm text-red-600">{error}</div>}
@@ -224,6 +261,9 @@ const AddTeen: React.FC = () => {
           <h2 className="text-sm text-gray-600">Church Children List</h2>
           <div className="text-sm text-gray-600">Number of Church Children: <span className="font-semibold">{children.length}</span></div>
         </div>
+        <p className="text-xs text-gray-500 mb-3">
+          Children are independent records and do not have system login accounts.
+        </p>
         
         {loading && <div className="text-sm text-gray-600 mb-2">Loading...</div>}
         {error && <div className="text-sm text-red-600 mb-2">{error}</div>}

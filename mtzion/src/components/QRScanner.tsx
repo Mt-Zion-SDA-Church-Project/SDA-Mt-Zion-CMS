@@ -111,77 +111,147 @@ const QRScanner: React.FC<QRScannerProps> = ({
       setError(null);
       setSuccess(null);
 
-      // Parse QR code data (assuming it contains member ID)
-      const memberId = qrData.trim();
+      // Parse QR code data - could be member ID or list of names
+      const inputData = qrData.trim();
       
-      if (!memberId) {
+      if (!inputData) {
         throw new Error('Invalid QR code data');
       }
 
-      // Verify member exists
-      const { data: member, error: memberError } = await supabase
-        .from('members')
-        .select('id, first_name, last_name, email, status')
-        .eq('id', memberId)
-        .eq('status', 'active')
-        .single();
+      // Check if input contains multiple names (comma-separated or newline-separated)
+      const memberNames = inputData
+        .split(/[,\n]/)
+        .map(name => name.trim())
+        .filter(name => name.length > 0);
 
-      if (memberError || !member) {
-        throw new Error('Member not found or inactive');
+      if (memberNames.length === 0) {
+        throw new Error('No valid names found');
       }
 
-      // Check if already checked in today
       const today = new Date().toISOString().split('T')[0];
-      const { data: existingAttendance } = await supabase
-        .from('attendance')
-        .select('id')
-        .eq('member_id', memberId)
-        .eq('attendance_date', today)
-        .eq('event_id', eventId || null)
-        .single();
+      let successMessages: string[] = [];
+      let errorMessages: string[] = [];
 
-      if (existingAttendance) {
-        throw new Error('Member has already checked in today');
+      if (memberNames.length === 1) {
+        // Single member check-in (existing logic)
+        const memberId = memberNames[0];
+        
+        // Try to find member by ID first
+        const { data: member, error: memberError } = await supabase
+          .from('members')
+          .select('id, first_name, last_name, email, status')
+          .eq('id', memberId)
+          .eq('status', 'active')
+          .single();
+
+        if (member && !memberError) {
+          // Member exists in database
+          const { data: existingAttendance } = await supabase
+            .from('attendance')
+            .select('id')
+            .eq('member_id', memberId)
+            .eq('attendance_date', today)
+            .eq('event_id', eventId || null)
+            .single();
+
+          if (existingAttendance) {
+            throw new Error('Member has already checked in today');
+          }
+
+          // Record attendance for existing member
+          const attendanceData = {
+            member_id: memberId,
+            event_id: eventId || null,
+            attendance_date: today,
+            attendance_type: eventId ? 'event' : 'service',
+            check_in_time: new Date().toISOString(),
+            qr_scanned: true
+          };
+
+          const { error: attendanceError } = await supabase
+            .from('attendance')
+            .insert(attendanceData);
+
+          if (attendanceError) {
+            throw new Error('Failed to record attendance');
+          }
+
+          // Log activity
+          await supabase
+            .from('activity_logs')
+            .insert({
+              member_id: memberId,
+              action: 'checked_in_via_qr',
+              details: `Checked in via QR code${eventId ? ' for event' : ' for service'}`
+            });
+
+          const memberName = `${member.first_name} ${member.last_name}`;
+          successMessages.push(memberName);
+        } else {
+          // Member not found in database, create manual entry
+          const attendanceData = {
+            member_id: null,
+            event_id: eventId || null,
+            attendance_date: today,
+            attendance_type: eventId ? 'event' : 'service',
+            check_in_time: new Date().toISOString(),
+            qr_scanned: true,
+            member_names: [memberId],
+            is_multi_member: false,
+            check_in_method: 'manual_entry'
+          };
+
+          const { error: attendanceError } = await supabase
+            .from('attendance')
+            .insert(attendanceData);
+
+          if (attendanceError) {
+            throw new Error('Failed to record attendance');
+          }
+
+          successMessages.push(memberId);
+        }
+      } else {
+        // Multiple members check-in
+        const attendanceData = {
+          member_id: null,
+          event_id: eventId || null,
+          attendance_date: today,
+          attendance_type: eventId ? 'event' : 'service',
+          check_in_time: new Date().toISOString(),
+          qr_scanned: true,
+          member_names: memberNames,
+          is_multi_member: true,
+          check_in_method: 'manual_entry'
+        };
+
+        const { error: attendanceError } = await supabase
+          .from('attendance')
+          .insert(attendanceData);
+
+        if (attendanceError) {
+          throw new Error('Failed to record multi-member attendance');
+        }
+
+        successMessages = memberNames;
       }
 
-      // Record attendance
-      const attendanceData = {
-        member_id: memberId,
-        event_id: eventId || null,
-        attendance_date: today,
-        attendance_type: eventId ? 'event' : 'service',
-        check_in_time: new Date().toISOString(),
-        qr_scanned: true
-      };
+      if (successMessages.length > 0) {
+        const successText = successMessages.length === 1 
+          ? `Successfully checked in: ${successMessages[0]}`
+          : `Successfully checked in ${successMessages.length} members: ${successMessages.join(', ')}`;
+        
+        setSuccess(successText);
+        
+        if (onScanSuccess) {
+          onScanSuccess('', successText);
+        }
 
-      const { error: attendanceError } = await supabase
-        .from('attendance')
-        .insert(attendanceData);
-
-      if (attendanceError) {
-        throw new Error('Failed to record attendance');
+        // Auto-hide success message after 5 seconds
+        setTimeout(() => {
+          setSuccess(null);
+        }, 5000);
       }
-
-      // Log activity
-      await supabase
-        .from('activity_logs')
-        .insert({
-          member_id: memberId,
-          action: 'checked_in_via_qr',
-          details: `Checked in via QR code${eventId ? ' for event' : ' for service'}`
-        });
-
-      const memberName = `${member.first_name} ${member.last_name}`;
-      setSuccess(`Successfully checked in: ${memberName}`);
-      
-      if (onScanSuccess) {
-        onScanSuccess(memberId, memberName);
-      }
-
-      // Auto-hide success message after 3 seconds
-      setTimeout(() => {
-        setSuccess(null);
-      }, 3000);
 
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to process QR code';
@@ -285,22 +355,22 @@ const QRScanner: React.FC<QRScannerProps> = ({
 
       {/* Manual QR Input */}
       <div className="border-t pt-6">
-        <h4 className="text-md font-medium text-gray-900 mb-3">Manual QR Code Entry</h4>
+        <h4 className="text-md font-medium text-gray-900 mb-3">Manual Check-in Entry</h4>
         <p className="text-sm text-gray-600 mb-4">
-          If the camera scanner isn't working, you can manually enter the QR code data below.
+          Enter member names to check in. You can enter multiple names separated by commas or new lines.
         </p>
         
         <form onSubmit={handleQRCodeSubmit} className="space-y-4">
           <div>
             <label htmlFor="qrData" className="block text-sm font-medium text-gray-700 mb-2">
-              QR Code Data
+              Member Names
             </label>
-            <input
-              type="text"
+            <textarea
               id="qrData"
               name="qrData"
-              placeholder="Enter QR code data or member ID..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              placeholder="Enter member names (one per line or separated by commas)&#10;Example:&#10;John Doe&#10;Jane Smith&#10;or: John Doe, Jane Smith"
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
               required
             />
           </div>
@@ -315,7 +385,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
             ) : (
               <CheckCircle className="w-4 h-4" />
             )}
-            {loading ? 'Processing...' : 'Check In Member'}
+            {loading ? 'Processing...' : 'Check In Members'}
           </button>
         </form>
       </div>

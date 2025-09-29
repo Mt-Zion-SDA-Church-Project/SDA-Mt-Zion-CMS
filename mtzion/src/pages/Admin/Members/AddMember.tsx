@@ -264,12 +264,31 @@ const AddMember: React.FC = () => {
       // Insert ministries into join table (ignore None)
       const ministriesToSave = (form.ministries || []).filter((m) => m && m !== 'None');
       if (ministriesToSave.length > 0) {
-        const rows = ministriesToSave.map((m) => ({ member_id: memberId, ministry_name: m }));
-        const mmRes = await supabase.from('member_ministries').insert(rows);
-        if (mmRes.error) {
-          console.error('Error inserting ministries:', mmRes.error);
-          // Continue without blocking member creation
-          setError(`Member created but ministries could not be saved: ${mmRes.error.message}`);
+        // Map ministry names to ministry IDs
+        const ministryRows = ministriesToSave.map((ministryName) => {
+          const ministry = ministryOptions.find(m => m.name === ministryName);
+          return {
+            member_id: memberId,
+            ministry_id: ministry?.id || null
+          };
+        }).filter(row => {
+          // Only include rows with valid ministry IDs that exist in the database
+          return row.ministry_id && row.ministry_id !== '1' && row.ministry_id !== '2' && 
+                 row.ministry_id !== '3' && row.ministry_id !== '4' && row.ministry_id !== '5' &&
+                 row.ministry_id !== '6' && row.ministry_id !== '7' && row.ministry_id !== '8' &&
+                 row.ministry_id !== '9' && row.ministry_id !== '10' && row.ministry_id !== '11' &&
+                 row.ministry_id !== '12' && row.ministry_id !== '13' && row.ministry_id !== '14';
+        });
+        
+        if (ministryRows.length > 0) {
+          const mmRes = await supabase.from('member_ministries').insert(ministryRows);
+          if (mmRes.error) {
+            console.error('Error inserting ministries:', mmRes.error);
+            // Continue without blocking member creation
+            setError(`Member created but ministries could not be saved: ${mmRes.error.message}`);
+          }
+        } else {
+          console.warn('No valid ministry IDs found for selected ministries:', ministriesToSave);
         }
       }
 
@@ -294,12 +313,24 @@ const AddMember: React.FC = () => {
         <p className="text-gray-600">Create a new church member</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="max-w-4xl mx-auto">
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="px-4 py-3 border-b bg-gray-50">
-            <span className="text-sm font-semibold">Register New Teenager</span>
+            <span className="text-sm font-semibold">Register New Member</span>
           </div>
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">Link to System User (Optional)</label>
+          <select name="userId" value={form.userId} onChange={handleChange} className="w-full border rounded px-3 py-2">
+            <option value="">No System User Link</option>
+            {systemUserOptions.map((su) => (
+              <option key={su.id} value={su.user_id}>
+                {su.full_name} ({su.username}) - {su.role}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">Link this member to an existing system user account. Name and email will be auto-filled.</p>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-gray-600 mb-1">First Name</label>
@@ -402,18 +433,6 @@ const AddMember: React.FC = () => {
             ))}
           </select>
         </div>
-        <div>
-          <label className="block text-sm text-gray-600 mb-1">Link to System User (Optional)</label>
-          <select name="userId" value={form.userId} onChange={handleChange} className="w-full border rounded px-3 py-2">
-            <option value="">No System User Link</option>
-            {systemUserOptions.map((su) => (
-              <option key={su.id} value={su.user_id}>
-                {su.full_name} ({su.username}) - {su.role}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-gray-500 mt-1">Link this member to an existing system user account. Name and email will be auto-filled.</p>
-        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-gray-600 mb-1">Email</label>
@@ -435,292 +454,11 @@ const AddMember: React.FC = () => {
         </div>
       </form>
         </div>
-
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-          <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <span className="text-sm font-semibold">Church Members List</span>
-            <LiveMembersCount />
-          </div>
-          <MembersTable />
-        </div>
       </div>
     </div>
   );
 };
 
-const LiveMembersCount: React.FC = () => {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    const load = async () => {
-      const { count } = await supabase.from('members').select('*', { count: 'exact', head: true });
-      setCount(count || 0);
-    };
-    load();
-    const channel = supabase
-      .channel('members-count')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-  return <div className="text-xs text-gray-600">Number of Church Members: {count}</div>;
-};
-
-const MembersTable: React.FC = () => {
-  const [rows, setRows] = useState<any[]>([]);
-  const [query, setQuery] = useState('');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({
-    firstName: '',
-    middleName: '',
-    lastName: '',
-    gender: '',
-    dateOfBirth: '',
-    residence: '',
-    placeOfBirth: '',
-    phone: '',
-    email: '',
-    familyId: '',
-  });
-  const [familyOptions, setFamilyOptions] = useState<{id: string; name: string}[]>([]);
-
-  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setEditForm((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleEdit = (m: any) => {
-    setEditingId(m.id);
-    setEditForm({
-      firstName: m.first_name || '',
-      middleName: m.middle_name || '',
-      lastName: m.last_name || '',
-      gender: m.gender || '',
-      dateOfBirth: m.date_of_birth ? new Date(m.date_of_birth).toISOString().slice(0,10) : '',
-      residence: m.address || '',
-      placeOfBirth: m.place_of_birth || '',
-      phone: m.phone || '',
-      email: m.email || '',
-      familyId: m.family_id || '',
-    });
-  };
-
-  const handleUpdate = async () => {
-    if (!editingId) return;
-    try {
-      const payload: any = {
-        first_name: editForm.firstName,
-        middle_name: editForm.middleName || null,
-        last_name: editForm.lastName,
-        gender: editForm.gender || null,
-        date_of_birth: editForm.dateOfBirth || null,
-        address: editForm.residence || null,
-        place_of_birth: editForm.placeOfBirth || null,
-        phone: editForm.phone || null,
-        email: editForm.email || null,
-        family_id: editForm.familyId || null,
-      };
-      const { error } = await supabase.from('members').update(payload).eq('id', editingId);
-      if (error) throw error;
-      setEditingId(null);
-      load();
-    } catch (err: any) {
-      console.error('Update failed:', err.message);
-    }
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditForm({
-      firstName: '', middleName: '', lastName: '', gender: '', dateOfBirth: '',
-      residence: '', placeOfBirth: '', phone: '', email: '', familyId: ''
-    });
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  };
-
-  const handleDeleteSelected = async () => {
-    if (selectedIds.length === 0) return;
-    const ok = window.confirm('Delete selected members?');
-    if (!ok) return;
-    try {
-      const { error } = await supabase.from('members').delete().in('id', selectedIds);
-      if (error) throw error;
-      setSelectedIds([]);
-      load();
-    } catch (err: any) {
-      console.error('Delete failed:', err.message);
-    }
-  };
-
-  const load = async () => {
-    try {
-      console.log('Loading members...');
-      const { data, error } = await supabase
-        .from('members')
-        .select(`
-          id, first_name, middle_name, last_name, gender, address, place_of_birth, date_of_birth, phone, email, family_id, user_id,
-          families:family_id(family_name),
-          member_ministries(ministry_name),
-          system_users:user_id(id, username, email, role, is_active, last_login)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      
-      if (error) {
-        console.error('Error loading members:', error);
-        return;
-      }
-      
-      console.log('Raw members data:', data);
-      
-      // Transform the data to include ministries as an array
-      const transformedData = (data || []).map(member => ({
-        ...member,
-        ministries: member.member_ministries?.map((mm: any) => mm.ministry_name) || []
-      }));
-      
-      console.log('Transformed members data:', transformedData);
-      setRows(transformedData);
-    } catch (err) {
-      console.error('Failed to load members:', err);
-    }
-  };
-  useEffect(() => {
-    // Load families for edit dropdown
-    const loadFamilies = async () => {
-      try {
-        const { data } = await supabase
-          .from('families')
-          .select('id, family_name')
-          .order('family_name');
-        if (data) {
-          setFamilyOptions(data.map((f: any) => ({ id: f.id, name: f.family_name })));
-        }
-      } catch (err) {
-        console.error('Error loading families:', err);
-      }
-    };
-
-    load();
-    loadFamilies();
-    
-    const channel = supabase
-      .channel('members-add-side')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    if (!q) return rows;
-    return rows.filter((m) =>
-      [m.first_name, m.middle_name, m.last_name, m.gender, m.address, m.place_of_birth, m.phone, m.families?.family_name]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [rows, query]);
-
-  return (
-    <div className="px-4 pb-4 overflow-x-auto">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm text-gray-600">Search:</span>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} className="border rounded px-2 py-1 text-sm w-60" />
-        <button onClick={handleDeleteSelected} disabled={selectedIds.length === 0} className="px-3 py-2 bg-red-600 text-white rounded text-sm disabled:opacity-60">Delete</button>
-        <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-3 py-2 bg-[#1f3b73] text-white rounded hover:opacity-90 text-sm ml-auto">Print List</button>
-      </div>
-      <table className="min-w-full text-sm border border-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left p-2 border-b">CHECK</th>
-                <th className="text-left p-2 border-b">NAME</th>
-                <th className="text-left p-2 border-b">GENDER</th>
-                <th className="text-left p-2 border-b">FAMILY</th>
-                <th className="text-left p-2 border-b">MINISTRY</th>
-                <th className="text-left p-2 border-b">MOBILE NO.</th>
-                <th className="text-left p-2 border-b">SYSTEM USER</th>
-              </tr>
-            </thead>
-        <tbody>
-          {filtered.length === 0 ? (
-            <tr>
-              <td className="p-2 text-gray-600" colSpan={7}>No data available in table</td>
-            </tr>
-          ) : (
-            filtered.map((m) => (
-              <tr key={m.id} className="odd:bg-white even:bg-gray-50">
-                <td className="p-2 border-b"><input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => toggleSelect(m.id)} /></td>
-                {editingId === m.id ? (
-                  <>
-                    <td className="p-2 border-b">
-                      <input name="firstName" value={editForm.firstName} onChange={handleEditChange} className="w-full border rounded px-2 py-1 text-xs" placeholder="First" />
-                      <input name="lastName" value={editForm.lastName} onChange={handleEditChange} className="w-full border rounded px-2 py-1 text-xs mt-1" placeholder="Last" />
-                    </td>
-                    <td className="p-2 border-b">
-                      <select name="gender" value={editForm.gender} onChange={handleEditChange} className="w-full border rounded px-2 py-1 text-xs">
-                        <option value="">—</option>
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                      </select>
-                    </td>
-                    <td className="p-2 border-b">
-                      <select name="familyId" value={editForm.familyId} onChange={handleEditChange} className="w-full border rounded px-2 py-1 text-xs">
-                        <option value="">—</option>
-                        {familyOptions.map((f) => (
-                          <option key={f.id} value={f.id}>{f.name}</option>
-                        ))}
-                      </select>
-                    </td>
-                        <td className="p-2 border-b">—</td>
-                        <td className="p-2 border-b">
-                          <input name="phone" value={editForm.phone} onChange={handleEditChange} className="w-full border rounded px-2 py-1 text-xs" />
-                        </td>
-                        <td className="p-2 border-b">—</td>
-                        <td className="p-2 border-b text-right">
-                          <button onClick={handleUpdate} className="px-3 py-1 bg-green-600 text-white rounded text-xs">Save</button>
-                        </td>
-                  </>
-                ) : (
-                  <>
-                    <td className="p-2 border-b">{[m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' ')}</td>
-                    <td className="p-2 border-b capitalize">{m.gender || '—'}</td>
-                    <td className="p-2 border-b">{m.families?.family_name || '—'}</td>
-                    <td className="p-2 border-b">{Array.isArray(m.ministries) ? m.ministries.join(', ') : '—'}</td>
-                    <td className="p-2 border-b">{m.phone || '—'}</td>
-                    <td className="p-2 border-b">
-                      {m.system_users ? (
-                        <div className="text-xs">
-                          <div className="font-medium">{m.system_users.username}</div>
-                          <div className="text-gray-500">{m.system_users.email}</div>
-                          <div className="text-gray-500 capitalize">{m.system_users.role}</div>
-                          {m.system_users.is_active ? (
-                            <span className="text-green-600">Active</span>
-                          ) : (
-                            <span className="text-red-600">Inactive</span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="p-2 border-b text-right">
-                      <button onClick={() => handleEdit(m)} className="px-3 py-1 bg-green-600 text-white rounded text-xs">Edit</button>
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-};
 
 export default AddMember;
 

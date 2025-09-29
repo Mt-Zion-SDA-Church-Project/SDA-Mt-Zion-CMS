@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Calendar, Heart, Gift, TrendingUp, Users, Clock, Activity, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import logo from '../../assets/sda-logo.png';
 
 interface MemberStats {
   myTithes: number;
@@ -46,6 +47,50 @@ const MemberDashboard: React.FC = () => {
 
   useEffect(() => {
     loadUserData();
+    
+    // Set up real-time subscriptions
+    const membersChannel = supabase
+      .channel('member-dashboard-members')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
+        loadUserData();
+      })
+      .subscribe();
+
+    const eventsChannel = supabase
+      .channel('member-dashboard-events')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
+        loadUserData();
+      })
+      .subscribe();
+
+    const attendanceChannel = supabase
+      .channel('member-dashboard-attendance')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
+        loadUserData();
+      })
+      .subscribe();
+
+    const tithesChannel = supabase
+      .channel('member-dashboard-tithes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tithes' }, () => {
+        loadUserData();
+      })
+      .subscribe();
+
+    const offeringsChannel = supabase
+      .channel('member-dashboard-offerings')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offerings' }, () => {
+        loadUserData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(membersChannel);
+      supabase.removeChannel(eventsChannel);
+      supabase.removeChannel(attendanceChannel);
+      supabase.removeChannel(tithesChannel);
+      supabase.removeChannel(offeringsChannel);
+    };
   }, []);
 
   // Close dropdown when clicking outside
@@ -124,13 +169,13 @@ const MemberDashboard: React.FC = () => {
           .order('event_date', { ascending: true })
           .limit(5),
         
-        // Upcoming birthdays
+        // Upcoming birthdays (next 7 days)
         supabase
           .from('members')
           .select('first_name, last_name, date_of_birth')
           .not('date_of_birth', 'is', null)
           .neq('id', memberData.id)
-          .limit(10),
+          .limit(20),
         
         // Recent activity
         supabase
@@ -166,7 +211,7 @@ const MemberDashboard: React.FC = () => {
         };
       }) || [];
 
-      // Format upcoming birthdays
+      // Format upcoming birthdays (next 7 days)
       const formattedBirthdays = birthdaysResult.data?.map(member => {
         const birthDate = new Date(member.date_of_birth);
         const today = new Date();
@@ -178,10 +223,11 @@ const MemberDashboard: React.FC = () => {
         
         return {
           name: `${member.first_name} ${member.last_name}`,
-          date: `${birthDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${daysUntil} days)`,
+          date: `${birthDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+          daysUntil,
           avatar: `${member.first_name[0]}${member.last_name[0]}`
         };
-      }).filter(birthday => birthday.date.includes('days') && parseInt(birthday.date.split('(')[1]) <= 30) || [];
+      }).filter(birthday => birthday.daysUntil >= 0 && birthday.daysUntil <= 7) || [];
 
       // Format recent activity
       const formattedActivity = activityResult.data?.map(activity => ({
@@ -226,6 +272,9 @@ const MemberDashboard: React.FC = () => {
           icon: Gift
         }
       ];
+
+      // Sort birthdays by days until
+      formattedBirthdays.sort((a, b) => a.daysUntil - b.daysUntil);
 
       setStats({
         myTithes: totalTithes,
@@ -286,8 +335,17 @@ const MemberDashboard: React.FC = () => {
     return (
       <div className="space-y-6">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">My Dashboard</h1>
-          <p className="text-gray-600">Welcome to your member portal</p>
+          <div className="flex items-center gap-4 mb-4">
+            <img 
+              src={logo} 
+              alt="SDA Mt. Zion Logo" 
+              className="w-12 h-12 lg:w-16 lg:h-16 object-contain"
+            />
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">My Dashboard</h1>
+              <p className="text-gray-600">Welcome to your member portal</p>
+            </div>
+          </div>
         </div>
 
         {/* Loading skeleton */}
@@ -311,8 +369,17 @@ const MemberDashboard: React.FC = () => {
   return (
     <div className="space-y-4 lg:space-y-6 p-4 lg:p-0">
       <div className="mb-6 lg:mb-8">
-        <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">My Dashboard</h1>
-        <p className="text-sm lg:text-base text-gray-600">Welcome to your member portal</p>
+        <div className="flex items-center gap-4 mb-4">
+          <img 
+            src={logo} 
+            alt="SDA Mt. Zion Logo" 
+            className="w-12 h-12 lg:w-16 lg:h-16 object-contain"
+          />
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">My Dashboard</h1>
+            <p className="text-sm lg:text-base text-gray-600">Welcome to your member portal</p>
+          </div>
+        </div>
       </div>
 
       {/* Stats Grid - Responsive */}
@@ -449,7 +516,12 @@ const MemberDashboard: React.FC = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-800 truncate">{birthday.name}</p>
-                    <p className="text-sm text-gray-600 truncate">{birthday.date}</p>
+                    <p className="text-sm text-gray-600 truncate">
+                      {birthday.date}
+                      {birthday.daysUntil === 0 && <span className="text-red-600 font-medium ml-1">(Today!)</span>}
+                      {birthday.daysUntil === 1 && <span className="text-orange-600 font-medium ml-1">(Tomorrow)</span>}
+                      {birthday.daysUntil > 1 && <span className="text-blue-600 font-medium ml-1">({birthday.daysUntil} days)</span>}
+                    </p>
                 </div>
                 </div>
               ))

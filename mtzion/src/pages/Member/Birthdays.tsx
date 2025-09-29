@@ -55,10 +55,10 @@ const MemberBirthdays: React.FC = () => {
         };
       });
 
-      // Filter by timeframe
+      // Filter by timeframe - default to next 7 days
       let filteredBirthdays = processedBirthdays;
       if (filterTimeframe === 'upcoming') {
-        filteredBirthdays = processedBirthdays.filter(b => b.daysUntil >= 0 && b.daysUntil <= 30);
+        filteredBirthdays = processedBirthdays.filter(b => b.daysUntil >= 0 && b.daysUntil <= 7);
       } else if (filterTimeframe === 'this_month') {
         const currentMonth = new Date().getMonth();
         filteredBirthdays = processedBirthdays.filter(b => b.month === currentMonth);
@@ -199,7 +199,7 @@ const MemberBirthdays: React.FC = () => {
               onChange={(e) => setFilterTimeframe(e.target.value)}
               className="border rounded-md px-3 py-2 text-sm"
             >
-              <option value="upcoming">Next 30 Days</option>
+              <option value="upcoming">Next 7 Days</option>
               <option value="this_month">This Month</option>
               <option value="next_month">Next Month</option>
               <option value="all">All Birthdays</option>

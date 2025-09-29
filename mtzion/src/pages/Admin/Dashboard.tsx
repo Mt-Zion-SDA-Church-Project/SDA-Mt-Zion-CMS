@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Users, UserCheck, Calendar, DollarSign, TrendingUp, Heart, Activity } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import logo from '../../assets/sda-logo.png';
 
 interface DashboardStats {
   totalMembers: number;
@@ -267,8 +268,17 @@ const AdminDashboard: React.FC = () => {
     return (
       <div className="space-y-6">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">Church Dashboard</h1>
-          <p className="text-gray-600">Overview of church activities and statistics</p>
+          <div className="flex items-center gap-4 mb-4">
+            <img 
+              src={logo} 
+              alt="SDA Mt. Zion Logo" 
+              className="w-12 h-12 lg:w-16 lg:h-16 object-contain"
+            />
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">Church Dashboard</h1>
+              <p className="text-gray-600">Overview of church activities and statistics</p>
+            </div>
+          </div>
         </div>
         
         {/* Loading skeleton */}
@@ -292,8 +302,17 @@ const AdminDashboard: React.FC = () => {
   return (
     <div className="space-y-4 lg:space-y-6 p-4 lg:p-0">
       <div className="mb-6 lg:mb-8">
-        <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">Church Dashboard</h1>
-        <p className="text-sm lg:text-base text-gray-600">Overview of church activities and statistics</p>
+        <div className="flex items-center gap-4 mb-4">
+          <img 
+            src={logo} 
+            alt="SDA Mt. Zion Logo" 
+            className="w-12 h-12 lg:w-16 lg:h-16 object-contain"
+          />
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">Church Dashboard</h1>
+            <p className="text-sm lg:text-base text-gray-600">Overview of church activities and statistics</p>
+          </div>
+        </div>
       </div>
 
       {/* Stats Grid - Responsive */}

@@ -23,25 +23,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     console.log('AuthProvider: Starting auth initialization');
     
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      console.log('Initial session check:', { session, error });
-      
-      if (error) {
-        console.error('Session check error:', error);
-        setLoading(false);
-        return;
+    // Clear any existing session on app start to force fresh login
+    const clearSessionOnStart = async () => {
+      try {
+        await supabase.auth.signOut();
+        console.log('Cleared existing session on app start');
+      } catch (error) {
+        console.log('No existing session to clear or error clearing:', error);
       }
-      
-      if (session?.user) {
-        console.log('Found existing session, fetching profile for:', session.user.id);
-        fetchUserProfile(session.user.id);
-      } else {
-        console.log('No existing session, setting loading to false');
-        setLoading(false);
-      }
-    }).catch((error) => {
-      console.error('Session check failed:', error);
+    };
+
+    // Clear session and set loading to false
+    clearSessionOnStart().finally(() => {
       setLoading(false);
     });
 
@@ -59,8 +52,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    return () => subscription.unsubscribe();
-  }, []);
+    // Auto-logout when browser/tab is closed
+    const handleBeforeUnload = async () => {
+      try {
+        await supabase.auth.signOut();
+        console.log('Auto-logout on browser close');
+      } catch (error) {
+        console.log('Error during auto-logout:', error);
+      }
+    };
+
+    // Add event listeners
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []); // Empty dependency array - only run on mount
 
   const fetchUserProfile = async (userId: string) => {
     console.log('=== FETCH USER PROFILE START ===');

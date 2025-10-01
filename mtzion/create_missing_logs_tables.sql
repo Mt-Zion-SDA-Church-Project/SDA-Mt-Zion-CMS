@@ -88,3 +88,6 @@ SELECT
 FROM public.activity_logs;
 
 
+
+
+

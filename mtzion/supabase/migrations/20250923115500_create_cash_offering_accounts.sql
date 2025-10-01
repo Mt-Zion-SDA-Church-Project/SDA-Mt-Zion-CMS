@@ -62,3 +62,6 @@ grant select on public.cash_offering_accounts to anon;
 
 
 
+
+
+

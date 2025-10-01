@@ -11,6 +11,7 @@ import MemberEvents from './pages/Member/Events';
 import MemberBirthdays from './pages/Member/Birthdays';
 import MemberResources from './pages/Member/Resources';
 import GiveOffertory from './pages/Member/GiveOffertory';
+import OffertoryReceipt from './pages/Member/OffertoryReceipt';
 import MemberDetails from './pages/Admin/Members/MemberDetails';
 import AddMember from './pages/Admin/Members/AddMember';
 import Birthdays from './pages/Admin/Members/Birthdays';
@@ -314,6 +315,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute requiredRole="member">
               <GiveOffertory />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/member/offertory/receipt/:id" 
+          element={
+            <ProtectedRoute requiredRole="member">
+              <OffertoryReceipt />
             </ProtectedRoute>
           } 
         />

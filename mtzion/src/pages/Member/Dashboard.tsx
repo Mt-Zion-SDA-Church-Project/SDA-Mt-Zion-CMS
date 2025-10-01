@@ -294,20 +294,16 @@ const MemberDashboard: React.FC = () => {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    const formatted = new Intl.NumberFormat('en-UG', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'UGX',
+      maximumFractionDigits: 0
     }).format(amount);
+    // Ensure USh label for clarity
+    return formatted.replace('UGX', 'USh');
   };
 
   const memberStats = [
-    {
-      name: 'My Tithes (2024)',
-      value: formatCurrency(stats.myTithes),
-      icon: Heart,
-      color: 'bg-blue-500',
-      change: '+12%',
-    },
     {
       name: 'My Offertory',
       value: formatCurrency(stats.myOfferings),
@@ -406,18 +402,27 @@ const MemberDashboard: React.FC = () => {
       {/* Quick Actions - Responsive */}
       <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:gap-4">
-          <button className="p-3 lg:p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center space-x-2 lg:space-x-3 group">
-            <Heart className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600 group-hover:scale-110 transition-transform" />
-            <span className="text-sm lg:text-base font-medium text-blue-600">Give Tithe</span>
-          </button>
-          <button className="p-3 lg:p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors flex items-center justify-center space-x-2 lg:space-x-3 group">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
+          <button
+            onClick={() => navigate('/member/offertory')}
+            className="p-3 lg:p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors flex items-center justify-center space-x-2 lg:space-x-3 group"
+          >
             <Gift className="w-5 h-5 lg:w-6 lg:h-6 text-green-600 group-hover:scale-110 transition-transform" />
-            <span className="text-sm lg:text-base font-medium text-green-600">Give Offering</span>
+            <span className="text-sm lg:text-base font-medium text-green-600">Give Offertory</span>
           </button>
-          <button className="p-3 lg:p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors flex items-center justify-center space-x-2 lg:space-x-3 group">
+          <button
+            onClick={() => navigate('/member/events')}
+            className="p-3 lg:p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors flex items-center justify-center space-x-2 lg:space-x-3 group"
+          >
             <Calendar className="w-5 h-5 lg:w-6 lg:h-6 text-purple-600 group-hover:scale-110 transition-transform" />
             <span className="text-sm lg:text-base font-medium text-purple-600">View Events</span>
+          </button>
+          <button
+            onClick={() => navigate('/member/resources')}
+            className="p-3 lg:p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center space-x-2 lg:space-x-3 group"
+          >
+            <Heart className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600 group-hover:scale-110 transition-transform" />
+            <span className="text-sm lg:text-base font-medium text-blue-600">Sabbath Resources</span>
           </button>
         </div>
       </div>

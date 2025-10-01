@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { BookOpen, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import logo from '../../assets/sda-logo.png';
+import backgroundImage from '../../assets/zion-choir.jpg';
 
 const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -31,8 +33,8 @@ const LoginForm: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="mx-auto w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center mb-4">
-              <BookOpen className="w-8 h-8 text-blue-900" />
+            <div className="mx-auto w-16 h-16 mb-4">
+              <img src={logo} alt="SDA Logo" className="w-16 h-16 object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-gray-800">SDA Mt. Zion</h1>
             <p className="text-gray-600">Church Management System</p>
@@ -97,14 +99,6 @@ const LoginForm: React.FC = () => {
             </button>
           </form>
 
-          {/* Demo Credentials */}
-          <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</h3>
-            <div className="text-xs text-gray-600 space-y-1">
-              <p><strong>Admin:</strong> admin@mtziondchurch.com / admin123</p>
-              <p><strong>Member:</strong> member@example.com / member123</p>
-            </div>
-          </div>
         </div>
 
         <div className="text-center mt-6">

@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import mtnLogo from '../../assets/mtn.png';
+import airtelLogo from '../../assets/airtel.png';
+import cardLogo from '../../assets/visa-mastercard.jpg';
+import paypalLogo from '../../assets/paypal.png';
 
 type KnownKey =
   | 'trust_fund'
@@ -60,7 +64,13 @@ const GiveOffertory: React.FC = () => {
         .order('label');
       if (!error) {
         const initial: Row[] = (data || []).map((c: any) => ({ id: crypto.randomUUID(), label: c.label, amount: '', key: c.key }));
-        setRows(initial);
+        // Fallback: if no categories exist yet, seed UI with known defaults (read-only)
+        if (initial.length === 0) {
+          const defaults: Row[] = (Object.keys(KNOWN_LABELS) as KnownKey[]).map((k) => ({ id: crypto.randomUUID(), label: KNOWN_LABELS[k], amount: '', key: k }));
+          setRows(defaults);
+        } else {
+          setRows(initial);
+        }
       }
     };
     load();
@@ -92,15 +102,39 @@ const GiveOffertory: React.FC = () => {
     }
     setProcessing(true);
     try {
-      // Payment integration placeholder.
-      // Here you would initialize the respective provider SDK/checkout and pass:
-      // - total amount
-      // - currency (UGX or your default)
-      // - breakdown (rows)
-      // - payer details
-      // After successful payment, you would persist a receipt on your backend.
-      alert(`Demo payment initialized via ${payMethod.toUpperCase()} for ${formatUGX(total)}.\n(Integrate provider SDK to complete.)`);
-      handleReset();
+      // Demo: Auto-generate receipt immediately when Pay is clicked
+      const categories = rows
+        .filter((r) => (Number(r.amount) || 0) > 0)
+        .map((r) => ({ key: r.key || 'custom', label: r.label, amount: Math.floor(Number(r.amount)) }));
+
+      // Get current member id
+      const { data: { user } } = await supabase.auth.getUser();
+      let memberId: string | null = null;
+      if (user) {
+        const { data: m } = await supabase
+          .from('members')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+        memberId = m?.id || null;
+      }
+
+      const { data, error } = await supabase
+        .from('offertory_payments')
+        .insert({
+          member_id: memberId,
+          amount_ugx: total,
+          currency: 'UGX',
+          method: payMethod,
+          categories,
+          notes
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+
+      // Navigate to printable receipt
+      window.location.assign(`/member/offertory/receipt/${data.id}`);
     } finally {
       setProcessing(false);
     }
@@ -167,10 +201,22 @@ const GiveOffertory: React.FC = () => {
             <div className="space-y-3">
               <div className="text-sm font-medium text-gray-700">Payment method</div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <button onClick={() => setPayMethod('mtn')} className={`px-3 py-2 border rounded text-sm ${payMethod === 'mtn' ? 'bg-yellow-50 border-yellow-400' : ''}`}>MTN MoMo</button>
-                <button onClick={() => setPayMethod('airtel')} className={`px-3 py-2 border rounded text-sm ${payMethod === 'airtel' ? 'bg-red-50 border-red-400' : ''}`}>Airtel Money</button>
-                <button onClick={() => setPayMethod('card')} className={`px-3 py-2 border rounded text-sm ${payMethod === 'card' ? 'bg-blue-50 border-blue-400' : ''}`}>Visa/Mastercard</button>
-                <button onClick={() => setPayMethod('paypal')} className={`px-3 py-2 border rounded text-sm ${payMethod === 'paypal' ? 'bg-indigo-50 border-indigo-400' : ''}`}>PayPal</button>
+                <button onClick={() => setPayMethod('mtn')} className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'mtn' ? 'bg-yellow-50 border-yellow-400' : ''}`}>
+                  <img src={mtnLogo} alt="MTN MoMo" className="h-6 object-contain" />
+                  <span>MTN MoMo</span>
+                </button>
+                <button onClick={() => setPayMethod('airtel')} className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'airtel' ? 'bg-red-50 border-red-400' : ''}`}>
+                  <img src={airtelLogo} alt="Airtel Money" className="h-6 object-contain" />
+                  <span>Airtel Money</span>
+                </button>
+                <button onClick={() => setPayMethod('card')} className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'card' ? 'bg-blue-50 border-blue-400' : ''}`}>
+                  <img src={cardLogo} alt="Visa / Mastercard" className="h-6 object-contain" />
+                  <span>Visa / Mastercard</span>
+                </button>
+                <button onClick={() => setPayMethod('paypal')} className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'paypal' ? 'bg-indigo-50 border-indigo-400' : ''}`}>
+                  <img src={paypalLogo} alt="PayPal" className="h-6 object-contain" />
+                  <span>PayPal</span>
+                </button>
               </div>
               <div className="text-xs text-gray-500">Payments are processed securely by the selected provider.</div>
             </div>

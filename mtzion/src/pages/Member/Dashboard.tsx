@@ -309,7 +309,7 @@ const MemberDashboard: React.FC = () => {
       change: '+12%',
     },
     {
-      name: 'My Offerings',
+      name: 'My Offertory',
       value: formatCurrency(stats.myOfferings),
       icon: Gift,
       color: 'bg-green-500',

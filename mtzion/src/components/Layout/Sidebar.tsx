@@ -120,8 +120,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
     { icon: QrCode, label: 'QR Check-in', path: '/member/qr-checkin' },
     { icon: Calendar, label: 'Events', path: '/member/events' },
     { icon: Heart, label: 'Birthdays', path: '/member/birthdays' },
-    { icon: Settings, label: 'My Account', path: '/member/account' },
-    { icon: Heart, label: 'My Givings', path: '/member/givings' },
+    { icon: Settings, label: 'SabbathSchool Resources', path: '/member/resources' },
+    { icon: Heart, label: 'Give Offertory', path: '/member/offertory' },
   ];
 
   const menuItems = isAdmin ? adminMenuItems : memberMenuItems;

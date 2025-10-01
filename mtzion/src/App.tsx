@@ -9,6 +9,8 @@ import MemberDashboard from './pages/Member/Dashboard';
 import MemberQRCheckIn from './pages/Member/QRCheckIn';
 import MemberEvents from './pages/Member/Events';
 import MemberBirthdays from './pages/Member/Birthdays';
+import MemberResources from './pages/Member/Resources';
+import GiveOffertory from './pages/Member/GiveOffertory';
 import MemberDetails from './pages/Admin/Members/MemberDetails';
 import AddMember from './pages/Admin/Members/AddMember';
 import Birthdays from './pages/Admin/Members/Birthdays';
@@ -300,24 +302,18 @@ function AppRoutes() {
           } 
         />
         <Route 
-          path="/member/account" 
+          path="/member/resources" 
           element={
             <ProtectedRoute requiredRole="member">
-              <div className="p-8 bg-white rounded-lg shadow-md">
-                <h1 className="text-2xl font-bold text-gray-800 mb-4">My Account</h1>
-                <p className="text-gray-600">Account management features coming soon...</p>
-              </div>
+              <MemberResources />
             </ProtectedRoute>
           } 
         />
         <Route 
-          path="/member/givings" 
+          path="/member/offertory" 
           element={
             <ProtectedRoute requiredRole="member">
-              <div className="p-8 bg-white rounded-lg shadow-md">
-                <h1 className="text-2xl font-bold text-gray-800 mb-4">My Givings</h1>
-                <p className="text-gray-600">Personal givings features coming soon...</p>
-              </div>
+              <GiveOffertory />
             </ProtectedRoute>
           } 
         />

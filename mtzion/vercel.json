@@ -1,9 +1,8 @@
 {
-  "buildCommand": "cd mtzion && npm install --production=false && npm run build",
-  "outputDirectory": "mtzion/dist",
+  "buildCommand": "npm install --production=false && npm run build",
+  "outputDirectory": "dist",
   "framework": "vite",
-  "installCommand": "cd mtzion && npm install --production=false",
-  "devCommand": "cd mtzion && npm run dev",
-  "rootDirectory": "mtzion"
+  "installCommand": "npm install --production=false",
+  "devCommand": "npm run dev"
 }
 

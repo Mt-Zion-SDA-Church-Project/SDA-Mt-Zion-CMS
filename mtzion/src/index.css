@@ -1,3 +1,41 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Print-only styles */
+@media print {
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Only show printable area */
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+
+  /* Position printable area at the top-left for clean print */
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Explicitly hide elements marked as non-print */
+  .hide-on-print {
+    display: none !important;
+  }
+
+  /* Hide table columns for checkboxes and actions when printing */
+  .print-table th.col-check,
+  .print-table th.col-actions,
+  .print-table td.col-check,
+  .print-table td.col-actions {
+    display: none !important;
+  }
+}

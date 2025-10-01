@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import sdaLogo from '../../../assets/sda-logo.png';
 
 const MemberDetails: React.FC = () => {
   const [rows, setRows] = useState<any[]>([]);
@@ -258,8 +259,16 @@ const MemberDetails: React.FC = () => {
 
   return (
     <div className="p-4">
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-        <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+      {/* Printable container */}
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden print-area">
+        {/* Print-only header with logo */}
+        <div className="hidden print:flex items-center gap-3 p-4">
+          <img src={sdaLogo} alt="SDA Logo" className="w-10 h-10 object-contain" />
+          <div>
+            <div className="text-base font-semibold">SDA Mt. Zion - Church Members List</div>
+          </div>
+        </div>
+        <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between hide-on-print">
           <span className="text-sm font-semibold">Church Members List</span>
           <div className="text-xs text-gray-600">
             Number of Church Members: {rows.length}
@@ -283,7 +292,7 @@ const MemberDetails: React.FC = () => {
           </div>
         )}
         
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-4 py-3 flex items-center gap-3 hide-on-print">
           <button onClick={handleDeleteSelected} disabled={selectedIds.length === 0} className="px-3 py-2 bg-red-500 text-white rounded text-sm disabled:opacity-60">Delete</button>
           <button onClick={load} disabled={loading} className="px-3 py-2 bg-blue-500 text-white rounded text-sm disabled:opacity-60">
             {loading ? 'Loading...' : 'Refresh'}
@@ -296,10 +305,10 @@ const MemberDetails: React.FC = () => {
         </div>
 
         <div className="px-4 pb-4 overflow-x-auto">
-          <table className="min-w-full text-sm border border-gray-200">
+          <table className="min-w-full text-sm border border-gray-200 print-table">
             <thead className="bg-gray-50">
               <tr>
-                <th className="text-left p-2 border-b">CHECK</th>
+                <th className="text-left p-2 border-b col-check">CHECK</th>
                 <th className="text-left p-2 border-b">MEMBER #</th>
                 <th className="text-left p-2 border-b">NAME</th>
                 <th className="text-left p-2 border-b">GENDER</th>
@@ -307,7 +316,7 @@ const MemberDetails: React.FC = () => {
                 <th className="text-left p-2 border-b">MOBILE NO.</th>
                 <th className="text-left p-2 border-b">EMAIL</th>
                 <th className="text-left p-2 border-b">STATUS</th>
-                <th className="text-left p-2 border-b">ACTIONS</th>
+                <th className="text-left p-2 border-b col-actions">ACTIONS</th>
               </tr>
             </thead>
             <tbody>
@@ -318,7 +327,7 @@ const MemberDetails: React.FC = () => {
               ) : (
                 rows.map((m) => (
                   <tr key={m.id} className="odd:bg-white even:bg-gray-50">
-                    <td className="p-2 border-b"><input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => toggleSelect(m.id)} /></td>
+                    <td className="p-2 border-b col-check"><input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => toggleSelect(m.id)} /></td>
                     {editingId === m.id ? (
                       <>
                         <td className="p-2 border-b">{m.member_number || '—'}</td>
@@ -355,7 +364,7 @@ const MemberDetails: React.FC = () => {
                             <option value="deceased">Deceased</option>
                           </select>
                         </td>
-                        <td className="p-2 border-b text-right">
+                        <td className="p-2 border-b text-right col-actions hide-on-print">
                           <button onClick={handleUpdate} className="px-3 py-1 bg-green-600 text-white rounded text-xs mr-1">Save</button>
                           <button onClick={cancelEdit} className="px-3 py-1 bg-gray-600 text-white rounded text-xs">Cancel</button>
                         </td>
@@ -379,7 +388,7 @@ const MemberDetails: React.FC = () => {
                             {m.status || 'active'}
                           </span>
                         </td>
-                        <td className="p-2 border-b text-right">
+                        <td className="p-2 border-b text-right col-actions hide-on-print">
                           <div className="flex gap-1">
                             <button onClick={() => handleEdit(m)} className="px-3 py-1 bg-green-600 text-white rounded text-xs">Edit</button>
                             {!m.user_id && (
@@ -406,7 +415,7 @@ const MemberDetails: React.FC = () => {
 
       {/* Create System User Modal */}
       {showCreateUserModal && selectedMember && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hide-on-print">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="px-6 py-4 border-b">
               <h3 className="text-lg font-semibold">Create System User</h3>

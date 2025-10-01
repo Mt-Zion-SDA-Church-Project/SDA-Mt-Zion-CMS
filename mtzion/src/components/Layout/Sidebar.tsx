@@ -56,9 +56,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       hasSubmenu: true,
       submenu: [
         { icon: Users, label: 'Children Details', path: '/admin/teens/details' },
-        { icon: Users, label: 'Sabbath School Details', path: '/admin/sabbath/details' },
+        { icon: Users, label: 'Sabbath School Resources', path: '/admin/sabbath/details' },
         { icon: UserPlus, label: 'Add Child', path: '/admin/teens/add' },
-        { icon: UserPlus, label: 'Add Sabbath School', path: '/admin/sabbath/add' },
+        { icon: UserPlus, label: 'Add Sabbath School Resources', path: '/admin/sabbath/add' },
       ]
     },
     { 
@@ -73,14 +73,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
     },
     { 
       icon: DollarSign, 
-      label: 'Givings/Tithe', 
+      label: 'Offertory', 
       path: '/admin/givings',
       hasSubmenu: true,
       submenu: [
         { icon: Gift, label: 'Tithes Paid', path: '/admin/givings/tithes' },
         { icon: UserPlus, label: 'Add Tithes', path: '/admin/givings/tithes/add' },
-        { icon: Gift, label: 'Offering', path: '/admin/givings/offering' },
-        { icon: UserPlus, label: 'Add Offering', path: '/admin/givings/offering/add' },
       ]
     },
     { 
@@ -264,7 +262,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                   </div>
                 )}
               </div>
-            ) : item.hasSubmenu && item.label === 'Givings/Tithe' ? (
+            ) : item.hasSubmenu && item.label === 'Offertory' ? (
               <div>
                 <button
                   onClick={() => setIsGivingsExpanded(!isGivingsExpanded)}

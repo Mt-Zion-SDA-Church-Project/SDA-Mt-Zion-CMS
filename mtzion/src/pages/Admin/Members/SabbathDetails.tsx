@@ -116,7 +116,7 @@ const SabbathDetails: React.FC = () => {
   const handlePrint = () => window.print();
 
   return (
-    <div className="p-6 bg-white rounded-lg shadow-md">
+    <div className="p-6 bg-white rounded-lg shadow-md print-area">
       <div className="flex items-center justify-between mb-4">
         <div className="text-sm text-gray-600">Number of Sabbath Schools: <span className="font-semibold">{data.length}</span></div>
         <button onClick={handlePrint} className="px-3 py-2 bg-primary text-white rounded hover:opacity-90">Print List</button>
@@ -142,7 +142,7 @@ const SabbathDetails: React.FC = () => {
       <div className="printable">
         <div className="hidden print:flex items-center mb-4">
           <img src="/logo.png" alt="Church logo" className="w-10 h-10 object-contain mr-3" />
-          <h2 className="text-lg font-semibold">SDA Mt. Zion - Church Sunday School Kids</h2>
+          <h2 className="text-lg font-semibold">SDA Mt. Zion - Sabbath School Resources</h2>
         </div>
         {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
         {loading && <div className="text-sm text-gray-600 mb-2">Loading...</div>}

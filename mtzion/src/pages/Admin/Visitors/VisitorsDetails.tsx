@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import sdaLogo from '../../../assets/sda-logo.png';
 
 const VisitorsDetails: React.FC = () => {
   const [rows, setRows] = useState<any[]>([]);
@@ -37,7 +38,12 @@ const VisitorsDetails: React.FC = () => {
 
   return (
     <div className="p-4">
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden print-area">
+        {/* Print-only header */}
+        <div className="hidden print:flex items-center gap-3 p-4">
+          <img src={sdaLogo} alt="SDA Logo" className="w-10 h-10 object-contain" />
+          <div className="text-base font-semibold">SDA Mt. Zion - Registered Visitors List</div>
+        </div>
         {/* Header */}
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
           <span className="text-sm font-semibold">Registered Visitors List</span>
@@ -48,7 +54,7 @@ const VisitorsDetails: React.FC = () => {
         </div>
 
         {/* Controls */}
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-4 py-3 flex items-center gap-3 hide-on-print">
           <div className="flex items-center gap-2">
             <select className="border rounded px-2 py-1 text-sm">
               {[10, 25, 50, 100].map((n) => (
@@ -66,7 +72,7 @@ const VisitorsDetails: React.FC = () => {
 
         {/* Table */}
         <div className="px-4 pb-4 overflow-x-auto">
-          <table className="min-w-full text-sm border border-gray-200">
+          <table className="min-w-full text-sm border border-gray-200 print-table">
             <thead className="bg-gray-50">
               <tr>
                 <th className="text-left p-2 border-b">NAME</th>

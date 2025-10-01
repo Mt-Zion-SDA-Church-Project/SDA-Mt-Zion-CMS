@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import sdaLogo from '../../../assets/sda-logo.png';
 
 type ChildRow = {
   id: string;
@@ -148,8 +149,8 @@ const TeensDetails: React.FC = () => {
 
   return (
     <div className="p-4">
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-        <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden print-area">
+        <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between hide-on-print">
           <div>
             <h2 className="text-sm font-semibold text-gray-800">Church Children List</h2>
             <p className="text-xs text-gray-500">Independent records - no login accounts required</p>
@@ -157,25 +158,26 @@ const TeensDetails: React.FC = () => {
           <div className="text-xs text-gray-600">Number of Church Children: <span className="font-semibold">{data.length}</span></div>
         </div>
 
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-4 py-3 flex items-center gap-3 hide-on-print">
           <button onClick={handleDelete} disabled={selectedIds.size === 0 || loading} className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">Delete</button>
           <div className="ml-auto flex items-center gap-2">
             <label className="text-sm text-gray-600">Search:</label>
             <input value={query} onChange={(e) => setQuery(e.target.value)} className="border rounded px-2 py-1" />
+            <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-3 py-2 bg-[#1f3b73] text-white rounded hover:opacity-90 text-sm">Print List</button>
           </div>
         </div>
 
         <div className="printable px-4 pb-4">
-        <div className="hidden print:flex items-center mb-4">
-          <img src="/logo.png" alt="Church logo" className="w-10 h-10 object-contain mr-3" />
-          <h2 className="text-lg font-semibold">SDA Mt. Zion - Church Children List</h2>
-        </div>
+          <div className="hidden print:flex items-center mb-4">
+            <img src={sdaLogo} alt="SDA Logo" className="w-10 h-10 object-contain mr-3" />
+            <h2 className="text-lg font-semibold">SDA Mt. Zion - Church Children List</h2>
+          </div>
         {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
         {loading && <div className="text-sm text-gray-600 mb-2">Loading...</div>}
-        <table className="w-full text-sm border border-gray-200">
+          <table className="w-full text-sm border border-gray-200 print-table">
           <thead className="bg-gray-50">
             <tr>
-              <th className="text-left p-2 border-b w-10"><input type="checkbox" onChange={(e) => toggleSelectAll(e.target.checked)} checked={data.slice(0, pageSize).every((r) => selectedIds.has(r.id)) && data.slice(0, pageSize).length > 0} /></th>
+              <th className="text-left p-2 border-b w-10 col-check"><input type="checkbox" onChange={(e) => toggleSelectAll(e.target.checked)} checked={data.slice(0, pageSize).every((r) => selectedIds.has(r.id)) && data.slice(0, pageSize).length > 0} /></th>
               <th className="text-left p-2 border-b">NAME</th>
               <th className="text-left p-2 border-b">GENDER</th>
               <th className="text-left p-2 border-b">RESIDENCE</th>
@@ -188,7 +190,7 @@ const TeensDetails: React.FC = () => {
           <tbody>
             {data.slice(0, pageSize).map((m) => (
               <tr key={m.id} className="odd:bg-white even:bg-gray-50">
-                <td className="p-2 border-b"><input type="checkbox" checked={selectedIds.has(m.id)} onChange={(e) => toggleSelectOne(m.id, e.target.checked)} /></td>
+                <td className="p-2 border-b col-check"><input type="checkbox" checked={selectedIds.has(m.id)} onChange={(e) => toggleSelectOne(m.id, e.target.checked)} /></td>
                 <td className="p-2 border-b">{m.name}</td>
                 <td className="p-2 border-b">{m.gender}</td>
                 <td className="p-2 border-b">{m.residence}</td>

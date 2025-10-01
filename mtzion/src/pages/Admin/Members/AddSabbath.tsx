@@ -36,7 +36,7 @@ const AddSabbath: React.FC = () => {
         throw new Error('File too large. Max allowed size is 25MB.');
       }
 
-      const bucket = 'Sabbath Resources';
+      const bucket = 'sabbath-resources';
       const fileExt = resourceFile.name.split('.').pop();
       const path = `${resourceForm.category}/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
 

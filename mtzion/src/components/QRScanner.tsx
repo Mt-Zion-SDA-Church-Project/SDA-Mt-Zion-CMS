@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { QrCode, CheckCircle, XCircle, Camera, AlertCircle, Loader2 } from 'lucide-react';
+import jsQR from 'jsqr';
 
 interface QRScannerProps {
   eventId?: string;
@@ -95,14 +96,29 @@ const QRScanner: React.FC<QRScannerProps> = ({
     // Get image data for QR code detection
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
     
-    // Simple QR code detection (you might want to use a more sophisticated library)
-    // For now, we'll simulate detection and let the user manually trigger
-    // In a real implementation, you'd use jsQR or similar library here
+    // Use jsQR for actual QR code detection
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "dontInvert",
+    });
+
+    if (code) {
+      // QR code detected!
+      console.log("QR Code detected:", code.data);
+      stopScanning(); // Stop scanning upon successful detection
+      
+      // Process the QR code data
+      handleQRDetection(code.data);
+    }
     
     // Continue scanning
     if (isScanning) {
       requestAnimationFrame(detectQRCode);
     }
+  };
+
+  const handleQRDetection = async (qrData: string) => {
+    // Immediately process the detected QR code
+    await handleManualQRInput(qrData);
   };
 
   const handleManualQRInput = async (qrData: string) => {
@@ -327,7 +343,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
                 className="hidden"
               />
               
-              {/* Scanning Overlay */}
+              {/* Scanning QR Highlight Overlay */}
               {isScanning && (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-48 h-48 sm:w-56 sm:h-56 border-2 border-primary border-dashed rounded-lg flex items-center justify-center bg-white/20">
@@ -349,6 +365,15 @@ const QRScanner: React.FC<QRScannerProps> = ({
                 <XCircle className="w-4 h-4" />
                 Stop Scanning
               </button>
+              {!isScanning && (
+                <button
+                  onClick={startScanning}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90"
+                >
+                  <Camera className="w-4 h-4" />
+                  Scan Again
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -41,3 +41,4 @@ COMMENT ON COLUMN public.attendance.check_in_method IS 'Method used for check-in
 
 
 
+

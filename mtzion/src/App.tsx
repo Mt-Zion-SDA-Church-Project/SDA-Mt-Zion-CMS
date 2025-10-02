@@ -28,7 +28,7 @@ import Offering from './pages/Admin/Givings/Offering';
 import AddOffering from './pages/Admin/Givings/AddOffering';
 import ManageSystemUsers from './pages/Admin/SystemUsers/ManageSystemUsers';
 import AddSystemUser from './pages/Admin/SystemUsers/AddSystemUser';
-import ActivityLog from './pages/Admin/Logs/ActivityLog';
+// import ActivityLog from './pages/Admin/Logs/ActivityLog';
 import UserLog from './pages/Admin/Logs/UserLog';
 import AddEvent from './pages/Admin/Events/AddEvent';
 import UpcomingEvents from './pages/Admin/Events/UpcomingEvents';
@@ -224,7 +224,10 @@ function AppRoutes() {
           path="/admin/logs/activity" 
           element={
             <ProtectedRoute requiredRole="admin">
-              <ActivityLog />
+              <div className="p-8 bg-white rounded-lg shadow-md">
+                <h1 className="text-2xl font-bold text-gray-800 mb-4">Activity Log</h1>
+                <p className="text-gray-600">Activity log feature coming soon...</p>
+              </div>
             </ProtectedRoute>
           } 
         />

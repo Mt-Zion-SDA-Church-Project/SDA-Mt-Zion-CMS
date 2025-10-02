@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import mtnLogo from '../../assets/mtn.png';
 import airtelLogo from '../../assets/airtel.png';
-import cardLogo from '../../assets/visa-mastercard.jpg';
+import cardLogo from '../../assets/visa-mastercard.png';
 import paypalLogo from '../../assets/paypal.png';
 
 type KnownKey =

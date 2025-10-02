@@ -24,9 +24,6 @@ interface AttendanceRecord {
   check_in_time: string;
   qr_scanned: boolean;
   created_at: string;
-  member_names?: string[];
-  is_multi_member?: boolean;
-  check_in_method?: string;
   member?: {
     id: string;
     first_name: string;
@@ -92,9 +89,6 @@ const AttendanceManager: React.FC = () => {
           check_in_time,
           qr_scanned,
           created_at,
-          member_names,
-          is_multi_member,
-          check_in_method,
           member:members(id, first_name, last_name, email, phone),
           event:events(id, title, event_date, location)
         `)
@@ -133,13 +127,8 @@ const AttendanceManager: React.FC = () => {
       const totalAttendees = data?.length || 0;
       const qrScannedCount = data?.filter(r => r.qr_scanned).length || 0;
       const manualCheckInCount = totalAttendees - qrScannedCount;
-      const multiMemberCount = data?.filter(r => r.is_multi_member).length || 0;
-      const totalIndividualMembers = data?.reduce((sum, r) => {
-        if (r.is_multi_member && r.member_names) {
-          return sum + r.member_names.length;
-        }
-        return sum + 1;
-      }, 0) || 0;
+      const multiMemberCount = 0; // Multi-member feature not implemented yet
+      const totalIndividualMembers = totalAttendees;
       
       const today = new Date().toISOString().split('T')[0];
       const todayAttendees = data?.filter(r => r.attendance_date === today).length || 0;
@@ -428,25 +417,12 @@ const AttendanceManager: React.FC = () => {
                       </td>
                       <td className="p-3 border-b">
                         <div>
-                          {record.is_multi_member && record.member_names ? (
-                            <div>
-                              <div className="font-medium text-blue-600">
-                                {record.member_names.length} Members
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                {record.member_names.join(', ')}
-                              </div>
-                            </div>
-                          ) : (
-                            <div>
-                              <div className="font-medium">
-                                {record.member?.first_name} {record.member?.last_name}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {record.member?.email}
-                              </div>
-                            </div>
-                          )}
+                          <div className="font-medium">
+                          {record.member?.first_name} {record.member?.last_name}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {record.member?.email}
+                        </div>
                         </div>
                       </td>
                       <td className="p-3 border-b">
@@ -474,12 +450,7 @@ const AttendanceManager: React.FC = () => {
                       </td>
                       <td className="p-3 border-b">
                         <div className="flex items-center gap-2">
-                          {record.is_multi_member ? (
-                            <>
-                              <Users className="w-4 h-4 text-blue-600" />
-                              <span className="text-blue-600 font-medium">Multi-Member</span>
-                            </>
-                          ) : record.qr_scanned ? (
+                          {record.qr_scanned ? (
                             <>
                               <QrCode className="w-4 h-4 text-green-600" />
                               <span className="text-green-600 font-medium">QR Scan</span>

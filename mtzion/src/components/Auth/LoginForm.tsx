@@ -90,7 +90,7 @@ const LoginForm: React.FC = () => {
             
             {/* Content - Positioned in corners */}
             {index === 0 && (
-              <div className="absolute top-4 left-4 max-w-xs">
+              <div className="absolute top-4 left-4 max-w-xs hidden lg:block">
                 <div className="bg-black/20 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                   <h3 className="text-white font-bold text-lg mb-2 drop-shadow-lg">
                     {belief.title}
@@ -108,7 +108,7 @@ const LoginForm: React.FC = () => {
             )}
             
             {index === 1 && (
-              <div className="absolute top-4 right-4 max-w-xs">
+              <div className="absolute top-4 right-4 max-w-xs hidden lg:block">
                 <div className="bg-black/20 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                   <h3 className="text-white font-bold text-lg mb-2 drop-shadow-lg">
                     {belief.title}
@@ -126,7 +126,7 @@ const LoginForm: React.FC = () => {
             )}
             
             {index === 2 && (
-              <div className="absolute bottom-4 left-4 max-w-xs">
+              <div className="absolute bottom-4 left-4 max-w-xs hidden lg:block">
                 <div className="bg-black/20 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                   <h3 className="text-gray-900 font-bold text-lg mb-2 drop-shadow-lg">
                     {belief.title}
@@ -144,7 +144,7 @@ const LoginForm: React.FC = () => {
             )}
             
             {index === 3 && (
-              <div className="absolute bottom-4 right-4 max-w-xs">
+              <div className="absolute bottom-4 right-4 max-w-xs hidden lg:block">
                 <div className="bg-black/20 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                   <h3 className="text-white font-bold text-lg mb-2 drop-shadow-lg">
                     {belief.title}
@@ -180,9 +180,9 @@ const LoginForm: React.FC = () => {
       
       {/* Login Form */}
       <div className="max-w-sm w-full relative z-10">
-        <div className="bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-white/30">
+        <div className="bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl p-6 sm:p-8 border border-white/30">
           {/* Header */}
-          <div className="text-center mb-8">
+          <div className="text-center mb-6 sm:mb-8">
             <div className="mx-auto w-16 h-16 mb-4">
               <img src={logo} alt="SDA Logo" className="w-16 h-16 object-contain" />
             </div>

@@ -37,30 +37,58 @@ const QRScanner: React.FC<QRScannerProps> = ({
       setSuccess(null);
       setLoading(true);
 
-      // Request camera permission - more permissive for mobile
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { 
+      console.log('Starting camera access...');
+      
+      // Check if getUserMedia is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access not supported in this browser. Please try using Chrome, Firefox, or Safari on mobile.');
+      }
+
+      // Additional mobile browser checks
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isAndroid = /Android/.test(navigator.userAgent);
+      console.log('Mobile browser detected:', { isIOS, isAndroid });
+
+      // Request camera permission - optimized for mobile
+      const constraints = {
+        video: {
           facingMode: 'environment', // Use back camera on mobile
-          width: { min: 320, ideal: 640, max: 1280 },
-          height: { min: 240, ideal: 480, max: 720 }
+          width: { min: 320, ideal: 640 },
+          height: { min: 240, ideal: 480 }
         }
-      });
+      };
+      
+      console.log('Requesting camera with constraints:', constraints);
+      
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      console.log('Camera stream obtained:', mediaStream);
+      console.log('Camera tracks:', mediaStream.getTracks());
 
       setStream(mediaStream);
       setHasPermission(true);
       
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.play();
-        setIsScanning(true);
-        setLoading(false);
         
-        // Start QR code detection
-        detectQRCode();
+        // Wait for video to be ready before starting detection
+        videoRef.current.onloadedmetadata = () => {
+          console.log('Video metadata loaded, dimensions:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+          setIsScanning(true);
+          setLoading(false);
+          
+          // Start QR code detection with a small delay
+          setTimeout(() => {
+            console.log('Starting QR detection');
+            detectQRCode();
+          }, 1000); // Increased delay for mobile
+        };
+        
+        videoRef.current.play();
       }
     } catch (err: any) {
       console.error('Camera access error:', err);
-      setError('Camera access denied. Please allow camera permission to scan QR codes.');
+      setError(`Camera access failed: ${err.message}`);
       setHasPermission(false);
       setLoading(false);
     }
@@ -84,17 +112,34 @@ const QRScanner: React.FC<QRScannerProps> = ({
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
 
-    if (!context) return;
+    if (!context) {
+      console.log('Canvas context not available');
+      return;
+    }
 
-    // Set canvas size to match video
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Check if video is ready
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      console.log('Video dimensions not ready:', video.videoWidth, video.videoHeight);
+      if (isScanning) {
+        requestAnimationFrame(detectQRCode);
+      }
+      return;
+    }
+
+    // Set canvas size to match video (optimize for mobile)
+    canvas.width = Math.min(video.videoWidth, 640); // Cap at 640 for mobile performance
+    canvas.height = Math.min(video.videoHeight, 480);
 
     // Draw current video frame to canvas
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // Get image data for QR code detection
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    
+    // Reduce logging frequency - only log every ~50 frames
+    if (Math.floor(Math.random() * 50) === 0) {
+      console.log('Scanning frame - Video dims:', video.videoWidth, 'x', video.videoHeight, 'Canvas dims:', canvas.width, 'x', canvas.height);
+    }
     
     // Use jsQR for actual QR code detection
     const code = jsQR(imageData.data, imageData.width, imageData.height, {
@@ -104,20 +149,30 @@ const QRScanner: React.FC<QRScannerProps> = ({
     if (code) {
       // QR code detected!
       console.log("QR Code detected:", code.data);
+      console.log("QR Code location:", code.location);
+      setSuccess(`QR Code detected! Processing...`);
       stopScanning(); // Stop scanning upon successful detection
       
       // Process the QR code data
       handleQRDetection(code.data);
+    } else {
+      // Log occasional scanning attempts for debugging
+      if (Math.floor(Math.random() * 100) === 0) { // Log every ~100 frames
+        console.log('No QR code detected in current frame');
+      }
     }
     
-    // Continue scanning
+    // Continue scanning with reduced frequency for mobile
     if (isScanning) {
-      requestAnimationFrame(detectQRCode);
+      setTimeout(() => {
+        requestAnimationFrame(detectQRCode);
+      }, 100); // Add small delay between scans for mobile performance
     }
   };
 
   const handleQRDetection = async (qrData: string) => {
     // Immediately process the detected QR code
+    console.log('QR Code detected, processing:', qrData);
     await handleManualQRInput(qrData);
   };
 
@@ -127,22 +182,46 @@ const QRScanner: React.FC<QRScannerProps> = ({
       setError(null);
       setSuccess(null);
 
-      // Parse QR code data - could be member ID or list of names
+      // Parse QR code data - could be member ID, names, or JSON
       const inputData = qrData.trim();
+      
+      console.log('Processing QR data:', inputData);
       
       if (!inputData) {
         throw new Error('Invalid QR code data');
       }
 
-      // Check if input contains multiple names (comma-separated or newline-separated)
-      const memberNames = inputData
-        .split(/[,\n]/)
-        .map(name => name.trim())
-        .filter(name => name.length > 0);
+      let memberNames: string[] = [];
+      let extractedMemberId: string | null = null;
+
+      // First, try to parse as JSON (from QRCodeGenerator)
+      try {
+        const parsedData = JSON.parse(inputData);
+        console.log('Parsed QR data as JSON:', parsedData);
+        
+        if (parsedData.type === 'member_checkin' && parsedData.memberId) {
+          extractedMemberId = parsedData.memberId;
+          // For member-specific QR codes, just use the member ID
+          memberNames = [parsedData.memberId];
+        } else if (parsedData.type === 'event_checkin') {
+          // For event-specific QR codes, this is for general check-in
+          // The scanner should expect manual member entry or member-specific codes
+          throw new Error('This QR code is for event check-in only. Please scan a member-specific QR code or enter member names manually.');
+        }
+      } catch (parseError) {
+        console.log('Not JSON, treating as plain text:', inputData);
+        // If not JSON, treat as plain text (member names or IDs)
+        memberNames = inputData
+          .split(/[,\n]/)
+          .map(name => name.trim())
+          .filter(name => name.length > 0);
+      }
 
       if (memberNames.length === 0) {
-        throw new Error('No valid names found');
+        throw new Error('No valid member information found in QR code');
       }
+
+      console.log('Extracted member names/IDs:', memberNames);
 
       const today = new Date().toISOString().split('T')[0];
       let successMessages: string[] = [];
@@ -329,15 +408,17 @@ const QRScanner: React.FC<QRScannerProps> = ({
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Video Preview */}
-            <div className="relative bg-gray-100 rounded-lg overflow-hidden">
-              <video
-                ref={videoRef}
-                className="w-full h-48 sm:h-64 object-cover"
-                playsInline
-                muted
-                autoPlay
-              />
+              {/* Video Preview */}
+              <div className="relative bg-gray-100 rounded-lg overflow-hidden">
+                <video
+                  ref={videoRef}
+                  className="w-full h-48 sm:h-64 object-cover"
+                  playsInline
+                  muted
+                  autoPlay
+                  webkit-playsinline="true"
+                  style={{ WebkitUserSelect: 'none', touchAction: 'manipulation' }}
+                />
               <canvas
                 ref={canvasRef}
                 className="hidden"

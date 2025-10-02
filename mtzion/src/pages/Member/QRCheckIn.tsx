@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import QRScanner from '../../components/QRScanner';
+import SimpleQRGenerator from '../../components/SimpleQRGenerator';
+import MobileQRTest from '../../components/MobileQRTest';
 import { QrCode, CheckCircle, Clock, Calendar, MapPin, Users } from 'lucide-react';
 
 interface Event {
@@ -116,12 +118,18 @@ const MemberQRCheckIn: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* QR Scanner */}
-        <div>
+        <div className="space-y-4">
           <QRScanner
             eventId={selectedEvent?.id}
             onScanSuccess={handleScanSuccess}
             onScanError={handleScanError}
           />
+          
+          {/* Mobile QR Test (for phones) */}
+          <MobileQRTest />
+          
+          {/* Desktop QR Generator (for testing) */}
+          <SimpleQRGenerator />
         </div>
 
         {/* Event Selection */}

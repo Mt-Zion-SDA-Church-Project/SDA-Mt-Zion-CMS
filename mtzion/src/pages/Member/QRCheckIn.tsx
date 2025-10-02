@@ -89,13 +89,13 @@ const MemberQRCheckIn: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <QrCode className="w-8 h-8 text-primary" />
+        <QrCode className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">QR Code Check-in</h1>
-          <p className="text-gray-600">Scan QR codes to check in to events and services</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">QR Code Check-in</h1>
+          <p className="text-sm sm:text-base text-gray-600">Scan QR codes to check in to events and services</p>
         </div>
       </div>
 
@@ -114,7 +114,7 @@ const MemberQRCheckIn: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* QR Scanner */}
         <div>
           <QRScanner

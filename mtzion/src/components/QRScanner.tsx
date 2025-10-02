@@ -36,12 +36,12 @@ const QRScanner: React.FC<QRScannerProps> = ({
       setSuccess(null);
       setLoading(true);
 
-      // Request camera permission
+      // Request camera permission - more permissive for mobile
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'environment', // Use back camera on mobile
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { min: 320, ideal: 640, max: 1280 },
+          height: { min: 240, ideal: 480, max: 720 }
         }
       });
 
@@ -317,9 +317,10 @@ const QRScanner: React.FC<QRScannerProps> = ({
             <div className="relative bg-gray-100 rounded-lg overflow-hidden">
               <video
                 ref={videoRef}
-                className="w-full h-64 object-cover"
+                className="w-full h-48 sm:h-64 object-cover"
                 playsInline
                 muted
+                autoPlay
               />
               <canvas
                 ref={canvasRef}
@@ -329,10 +330,10 @@ const QRScanner: React.FC<QRScannerProps> = ({
               {/* Scanning Overlay */}
               {isScanning && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-48 h-48 border-2 border-primary border-dashed rounded-lg flex items-center justify-center bg-white/20">
+                  <div className="w-48 h-48 sm:w-56 sm:h-56 border-2 border-primary border-dashed rounded-lg flex items-center justify-center bg-white/20">
                     <div className="text-center">
-                      <QrCode className="w-8 h-8 text-primary mx-auto mb-2" />
-                      <p className="text-sm text-primary font-medium">Scanning...</p>
+                      <QrCode className="w-6 h-6 sm:w-8 sm:h-8 text-primary mx-auto mb-2" />
+                      <p className="text-xs sm:text-sm text-primary font-medium">Position QR code here</p>
                     </div>
                   </div>
                 </div>

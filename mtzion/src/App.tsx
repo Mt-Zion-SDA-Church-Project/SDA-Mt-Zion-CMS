@@ -29,7 +29,7 @@ import AddOffering from './pages/Admin/Givings/AddOffering';
 import ManageSystemUsers from './pages/Admin/SystemUsers/ManageSystemUsers';
 import AddSystemUser from './pages/Admin/SystemUsers/AddSystemUser';
 // import ActivityLog from './pages/Admin/Logs/ActivityLog';
-import UserLog from './pages/Admin/Logs/UserLog';
+// import UserLog from './pages/Admin/Logs/UserLog';
 import AddEvent from './pages/Admin/Events/AddEvent';
 import UpcomingEvents from './pages/Admin/Events/UpcomingEvents';
 import AttendanceManager from './pages/Admin/Attendance/AttendanceManager';
@@ -235,7 +235,10 @@ function AppRoutes() {
           path="/admin/logs/user" 
           element={
             <ProtectedRoute requiredRole="admin">
-              <UserLog />
+              <div className="p-8 bg-white rounded-lg shadow-md">
+                <h1 className="text-2xl font-bold text-gray-800 mb-4">User Log</h1>
+                <p className="text-gray-600">User log feature temporarily disabled for deployment...</p>
+              </div>
             </ProtectedRoute>
           } 
         />

@@ -5,7 +5,6 @@ import {
   Calendar, 
   QrCode, 
   CheckCircle, 
-  XCircle, 
   Clock, 
   Download,
   Filter,
@@ -30,13 +29,13 @@ interface AttendanceRecord {
     last_name: string;
     email: string;
     phone?: string;
-  };
+  } | null;
   event?: {
     id: string;
     title: string;
     event_date: string;
     location?: string;
-  };
+  } | null;
 }
 
 interface AttendanceStats {
@@ -67,11 +66,10 @@ const AttendanceManager: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterDate, setFilterDate] = useState<string>('all');
-  const [selectedEvent, setSelectedEvent] = useState<string>('all');
 
   useEffect(() => {
     loadAttendanceData();
-  }, [filterType, filterDate, selectedEvent]);
+  }, [filterType, filterDate]);
 
   const loadAttendanceData = async () => {
     setLoading(true);
@@ -113,28 +111,32 @@ const AttendanceManager: React.FC = () => {
         }
       }
 
-      if (selectedEvent !== 'all') {
-        query = query.eq('event_id', selectedEvent);
-      }
 
       const { data, error: fetchError } = await query;
       
       if (fetchError) throw fetchError;
 
-      setAttendanceRecords(data || []);
+      // Transform the data to handle Supabase join arrays
+      const transformedData = (data || []).map((record: any) => ({
+        ...record,
+        member: record.member?.[0] || null,
+        event: record.event?.[0] || null
+      }));
+
+      setAttendanceRecords(transformedData);
 
       // Calculate stats
-      const totalAttendees = data?.length || 0;
-      const qrScannedCount = data?.filter(r => r.qr_scanned).length || 0;
+      const totalAttendees = transformedData.length;
+      const qrScannedCount = transformedData.filter(r => r.qr_scanned).length;
       const manualCheckInCount = totalAttendees - qrScannedCount;
       const multiMemberCount = 0; // Multi-member feature not implemented yet
       const totalIndividualMembers = totalAttendees;
       
       const today = new Date().toISOString().split('T')[0];
-      const todayAttendees = data?.filter(r => r.attendance_date === today).length || 0;
+      const todayAttendees = transformedData.filter(r => r.attendance_date === today).length;
       
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const thisWeekAttendees = data?.filter(r => r.attendance_date >= weekAgo).length || 0;
+      const thisWeekAttendees = transformedData.filter(r => r.attendance_date >= weekAgo).length;
 
       // Get total members for attendance rate calculation
       const { data: membersData } = await supabase

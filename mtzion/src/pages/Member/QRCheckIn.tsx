@@ -3,7 +3,8 @@ import { supabase } from '../../lib/supabase';
 import QRScanner from '../../components/QRScanner';
 import SimpleQRGenerator from '../../components/SimpleQRGenerator';
 import MobileQRTest from '../../components/MobileQRTest';
-import { QrCode, CheckCircle, Clock, Calendar, MapPin, Users } from 'lucide-react';
+import { QrCode, CheckCircle, Clock, Calendar, MapPin, Users, XCircle } from 'lucide-react';
+import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 interface Event {
   id: string;
@@ -92,6 +93,7 @@ const MemberQRCheckIn: React.FC = () => {
 
   return (
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+      <MemberMobileNav title="QR Check-in" />
       {/* Header */}
       <div className="flex items-center gap-3">
         <QrCode className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />

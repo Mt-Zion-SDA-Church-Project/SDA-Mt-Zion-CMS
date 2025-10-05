@@ -66,7 +66,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
         <div className="flex items-center space-x-4">
           <button
             onClick={toggleSidebar}
-            className="p-2 rounded-md hover:bg-gray-100"
+            className="p-2 rounded-md hover:bg-gray-100 hidden lg:inline-flex"
           >
             <Menu className="w-5 h-5" />
           </button>

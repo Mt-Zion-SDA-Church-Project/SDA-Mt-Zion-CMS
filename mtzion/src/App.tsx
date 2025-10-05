@@ -333,7 +333,7 @@ function AppRoutes() {
           } 
         />
         <Route 
-          path="/member/events" 
+          path="/member/events"
           element={
             <ProtectedRoute requiredRole="member">
               <div className="p-8 bg-white rounded-lg shadow-md">

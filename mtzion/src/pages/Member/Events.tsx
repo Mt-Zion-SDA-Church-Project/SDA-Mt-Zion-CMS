@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Calendar, Clock, MapPin, Users, Filter, Search } from 'lucide-react';
+import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 interface Event {
   id: string;
@@ -106,6 +107,7 @@ const MemberEvents: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      <MemberMobileNav title="Events" />
       {/* Header */}
       <div className="flex items-center gap-3">
         <Calendar className="w-8 h-8 text-primary" />

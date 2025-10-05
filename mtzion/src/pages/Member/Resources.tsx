@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 type ResourceRow = {
   id: string;
@@ -56,6 +57,7 @@ const MemberResources: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <MemberMobileNav title="Resources" />
       <div>
         <h1 className="text-2xl font-bold text-gray-800">Sabbath School Resources</h1>
         <p className="text-gray-600">Download lesson materials shared by church admins</p>

@@ -23,21 +23,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     console.log('AuthProvider: Starting auth initialization');
     
-    // Clear any existing session on app start to force fresh login
-    const clearSessionOnStart = async () => {
+    const clearSessionOnStart = () => {
+      console.log('Clearing any existing session on app start');
       try {
-        await supabase.auth.signOut();
-        console.log('Cleared existing session on app start');
+        supabase.auth.signOut();
+        localStorage.removeItem('sb-' + process.env.REACT_APP_SUPABASE_PROJECT_ID + '-auth-token');
+        sessionStorage.clear();
       } catch (error) {
-        console.log('No existing session to clear or error clearing:', error);
+        console.error('Error clearing session:', error);
       }
     };
 
-    // Clear session and set loading to false
-    clearSessionOnStart().finally(() => {
-      setLoading(false);
-    });
-
+    // Clear session on app load for testing
+    clearSessionOnStart();
+    
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -52,24 +51,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // Auto-logout when browser/tab is closed
-    const handleBeforeUnload = async () => {
-      try {
-        await supabase.auth.signOut();
-        console.log('Auto-logout on browser close');
-      } catch (error) {
-        console.log('Error during auto-logout:', error);
-      }
-    };
-
-    // Add event listeners
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
     return () => {
       subscription.unsubscribe();
-      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, []); // Empty dependency array - only run on mount
+  }, []);
 
   const fetchUserProfile = async (userId: string) => {
     console.log('=== FETCH USER PROFILE START ===');
@@ -177,11 +162,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      throw error;
+    console.log('Starting sign out process...');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Sign out error:', error);
+        throw error;
+      }
+      
+      console.log('Sign out successful');
+      setUser(null);
+    } catch (error) {
+      console.error('Sign out failed:', error);
     }
-    setUser(null);
   };
 
   return (

@@ -4,6 +4,7 @@ import mtnLogo from '../../assets/mtn.png';
 import airtelLogo from '../../assets/airtel.png';
 import cardLogo from '../../assets/visa-mastercard.png';
 import paypalLogo from '../../assets/paypal.png';
+import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 type KnownKey =
   | 'trust_fund'
@@ -142,6 +143,7 @@ const GiveOffertory: React.FC = () => {
 
   return (
     <div className="p-3 sm:p-4">
+      <MemberMobileNav title="Give Offertory" />
       <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
         <div className="px-3 sm:px-4 py-3 sm:py-4 border-b bg-gray-50">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

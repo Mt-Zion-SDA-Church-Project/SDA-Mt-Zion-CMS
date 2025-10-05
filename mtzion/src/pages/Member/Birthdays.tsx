@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Heart, Calendar, Filter, Search, Gift, Cake } from 'lucide-react';
+import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 interface Birthday {
   id: string;
@@ -125,6 +126,7 @@ const MemberBirthdays: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      <MemberMobileNav title="Birthdays" />
       {/* Header */}
       <div className="flex items-center gap-3">
         <Heart className="w-8 h-8 text-primary" />

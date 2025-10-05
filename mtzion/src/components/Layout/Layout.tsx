@@ -12,7 +12,9 @@ const Layout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      <Sidebar isCollapsed={sidebarCollapsed} />
+      <div className="hidden lg:block">
+        <Sidebar isCollapsed={sidebarCollapsed} />
+      </div>
       
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header toggleSidebar={toggleSidebar} />

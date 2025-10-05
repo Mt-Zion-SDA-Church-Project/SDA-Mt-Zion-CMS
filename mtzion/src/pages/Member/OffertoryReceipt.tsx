@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import MemberMobileNav from '../../components/Member/MemberMobileNav';
 import logo from '../../assets/sda-logo.png';
 
 type Payment = {
@@ -43,11 +44,22 @@ const OffertoryReceipt: React.FC = () => {
 
   const formatUGX = (n: number) => new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', maximumFractionDigits: 0 }).format(n).replace('UGX', 'USh');
 
-  if (loading) return <div className="p-6">Loading…</div>;
-  if (error || !payment) return <div className="p-6 text-red-600">{error || 'Receipt not found'}</div>;
+  if (loading) return (
+    <div className="p-6">
+      <MemberMobileNav title="Receipt" />
+      Loading…
+    </div>
+  );
+  if (error || !payment) return (
+    <div className="p-6">
+      <MemberMobileNav title="Receipt" />
+      <div className="text-red-600">{error || 'Receipt not found'}</div>
+    </div>
+  );
 
   return (
     <div className="p-4">
+      <MemberMobileNav title="Receipt" />
       <div className="bg-white rounded-lg shadow-sm border overflow-hidden print-area">
         <div className="px-6 py-5 border-b flex items-center justify-between">
           <div className="flex items-center gap-3">

@@ -34,6 +34,8 @@ import AddEvent from './pages/Admin/Events/AddEvent';
 import UpcomingEvents from './pages/Admin/Events/UpcomingEvents';
 import AttendanceManager from './pages/Admin/Attendance/AttendanceManager';
 import Reports from './pages/Admin/Reports/Reports';
+import AdminGallery from './pages/Admin/Gallery';
+import MemberGallery from './pages/Member/Gallery';
 
 function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode, requiredRole?: string }) {
   const { user, loading } = useAuth();
@@ -274,6 +276,14 @@ function AppRoutes() {
             </ProtectedRoute>
           } 
         />
+        <Route 
+          path="/admin/gallery" 
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AdminGallery />
+            </ProtectedRoute>
+          } 
+        />
 
         {/* Member Routes */}
         <Route 
@@ -329,6 +339,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute requiredRole="member">
               <OffertoryReceipt />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/member/gallery" 
+          element={
+            <ProtectedRoute requiredRole="member">
+              <MemberGallery />
             </ProtectedRoute>
           } 
         />

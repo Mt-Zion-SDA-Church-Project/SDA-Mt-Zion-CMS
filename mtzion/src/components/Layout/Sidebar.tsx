@@ -17,7 +17,8 @@ import {
   ChevronRight,
   UserPlus,
   Cake,
-  QrCode
+  QrCode,
+  Images
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import logo from '../../assets/sda-logo.png';
@@ -111,6 +112,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         { icon: Clock, label: 'Upcoming Events', path: '/admin/events/upcoming' },
       ]
     },
+    { icon: Images, label: 'Gallery', path: '/admin/gallery' },
     { icon: Users, label: 'Attendance', path: '/admin/attendance' },
     { icon: FileText, label: 'Reports', path: '/admin/reports' },
   ];
@@ -122,6 +124,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
     { icon: Heart, label: 'Birthdays', path: '/member/birthdays' },
     { icon: Settings, label: 'SabbathSchool Resources', path: '/member/resources' },
     { icon: Heart, label: 'Give Offertory', path: '/member/offertory' },
+    { icon: Images, label: 'Gallery', path: '/member/gallery' },
   ];
 
   const menuItems = isAdmin ? adminMenuItems : memberMenuItems;

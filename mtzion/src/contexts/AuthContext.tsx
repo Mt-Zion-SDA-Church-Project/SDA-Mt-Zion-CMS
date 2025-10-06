@@ -93,6 +93,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (systemUser && !systemError) {
+        if (systemUser.is_active === false) {
+          console.warn('System user is inactive; signing out');
+          try {
+            await supabase.auth.signOut();
+          } catch (e) {
+            console.error('Error signing out inactive user:', e);
+          }
+          setUser(null);
+          return;
+        }
         setUser({
           id: userId,
           email: systemUser.email,

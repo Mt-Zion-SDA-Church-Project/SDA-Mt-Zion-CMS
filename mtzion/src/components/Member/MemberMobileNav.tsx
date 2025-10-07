@@ -15,6 +15,7 @@ const items: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', href: '/member/dashboard', icon: Home },
   { id: 'offertory', label: 'Give Offertory', href: '/member/offertory', icon: CreditCard },
   { id: 'events', label: 'Events', href: '/member/events', icon: Calendar },
+  { id: 'gallery', label: 'Gallery', href: '/member/gallery', icon: Images },
   { id: 'resources', label: 'Resources', href: '/member/resources', icon: BookOpen },
   { id: 'birthdays', label: 'Birthdays', href: '/member/birthdays', icon: Heart },
   { id: 'qr', label: 'QR Check-in', href: '/member/qr-checkin', icon: QrCode }

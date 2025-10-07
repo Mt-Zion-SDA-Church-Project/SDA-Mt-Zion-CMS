@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Calendar, Clock, MapPin, Users, Filter, Search } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Filter, Search, Share2, Mail, MessageCircle, Link as LinkIcon, Check } from 'lucide-react';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 interface Event {
@@ -22,6 +22,8 @@ const MemberEvents: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterDate, setFilterDate] = useState<string>('upcoming');
+  const [shareOpenId, setShareOpenId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     loadEvents();
@@ -77,6 +79,49 @@ const MemberEvents: React.FC = () => {
       event.event_type.toLowerCase().includes(searchTerm)
     );
   });
+
+  const buildEventShareUrl = (eventId: string) => {
+    const base = window.location.origin || '';
+    return `${base}/member/events?eid=${encodeURIComponent(eventId)}`;
+  };
+
+  const buildEventShareText = (e: Event) => {
+    const { date, time } = formatEventDate(e.event_date);
+    const lines = [
+      `${e.title}`,
+      e.description ? e.description : undefined,
+      `When: ${date} at ${time}`,
+      e.location ? `Where: ${e.location}` : undefined
+    ].filter(Boolean).join('\n');
+    return lines;
+  };
+
+  const shareViaWeb = async (e: Event) => {
+    try {
+      if ((navigator as any).share) {
+        await (navigator as any).share({
+          title: e.title,
+          text: buildEventShareText(e),
+          url: buildEventShareUrl(e.id)
+        });
+      } else {
+        // fallback to copy
+        await copyEventLink(e);
+      }
+    } catch {
+      // user may cancel; ignore
+    }
+  };
+
+  const copyEventLink = async (e: Event) => {
+    try {
+      await navigator.clipboard.writeText(`${buildEventShareText(e)}\n${buildEventShareUrl(e.id)}`);
+      setCopiedId(e.id);
+      setTimeout(() => setCopiedId((prev) => (prev === e.id ? null : prev)), 1500);
+    } catch {
+      // ignore
+    }
+  };
 
   const getEventTypeColor = (type: string) => {
     switch (type) {
@@ -204,9 +249,55 @@ const MemberEvents: React.FC = () => {
                           <p className="text-gray-600 text-sm mb-2 line-clamp-2">{event.description}</p>
                         )}
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getEventTypeColor(event.event_type)}`}>
-                        {event.event_type.replace('_', ' ')}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${getEventTypeColor(event.event_type)}`}>
+                          {event.event_type.replace('_', ' ')}
+                        </span>
+                        <div className="relative">
+                          <button
+                            onClick={() => setShareOpenId((id) => id === event.id ? null : event.id)}
+                            className="p-2 rounded-md border hover:bg-gray-50"
+                            title="Share"
+                          >
+                            <Share2 className="w-4 h-4" />
+                          </button>
+                          {shareOpenId === event.id && (
+                            <div className="absolute right-0 mt-2 w-56 bg-white border rounded-lg shadow-lg z-10">
+                              <div className="p-2">
+                                <button
+                                  onClick={() => { shareViaWeb(event); setShareOpenId(null); }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-50 text-sm"
+                                >
+                                  <Share2 className="w-4 h-4" /> Share (device)
+                                </button>
+                                <a
+                                  href={`mailto:?subject=${encodeURIComponent(event.title)}&body=${encodeURIComponent(buildEventShareText(event) + '\n' + buildEventShareUrl(event.id))}`}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-50 text-sm"
+                                  onClick={() => setShareOpenId(null)}
+                                >
+                                  <Mail className="w-4 h-4" /> Email
+                                </a>
+                                <a
+                                  href={`https://wa.me/?text=${encodeURIComponent(buildEventShareText(event) + '\n' + buildEventShareUrl(event.id))}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-50 text-sm"
+                                  onClick={() => setShareOpenId(null)}
+                                >
+                                  <MessageCircle className="w-4 h-4" /> WhatsApp
+                                </a>
+                                <button
+                                  onClick={() => { copyEventLink(event); setShareOpenId(null); }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-50 text-sm"
+                                >
+                                  {copiedId === event.id ? <Check className="w-4 h-4 text-green-600" /> : <LinkIcon className="w-4 h-4" />}
+                                  {copiedId === event.id ? 'Copied!' : 'Copy link'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">

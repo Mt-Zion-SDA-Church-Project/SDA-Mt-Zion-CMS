@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { UploadCloud, Images, Plus, Loader2, Search, Layers, Calendar, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { UploadCloud, Images, Plus, Loader2, Search, Layers, Calendar, X, ChevronLeft, ChevronRight, Pencil, Trash2, Save, XCircle, Download, LayoutGrid, Image as ImageIcon } from 'lucide-react';
 
 interface EventItem {
   id: string;
@@ -48,6 +48,17 @@ const AdminGallery: React.FC = () => {
   const [albumPhotos, setAlbumPhotos] = useState<PhotoItem[]>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
+  // Edit/Delete state
+  const [isEditingAlbum, setIsEditingAlbum] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editEventId, setEditEventId] = useState<string>('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
 
   useEffect(() => {
     const loadEvents = async () => {
@@ -109,6 +120,12 @@ const AdminGallery: React.FC = () => {
   const handleAlbumClick = async (album: GalleryItem) => {
     setSelectedAlbum(album);
     setCurrentPhotoIndex(0);
+    // prime edit fields
+    setIsEditingAlbum(false);
+    setEditTitle(album.title || '');
+    setEditDescription(album.description || '');
+    setEditEventId(album.event_id || '');
+    setViewMode('single');
     await loadAlbumPhotos(album.id);
   };
 
@@ -116,6 +133,126 @@ const AdminGallery: React.FC = () => {
     setSelectedAlbum(null);
     setAlbumPhotos([]);
     setCurrentPhotoIndex(0);
+    setIsEditingAlbum(false);
+    setDeleteConfirm(false);
+    setViewMode('single');
+  };
+
+  const onStartEditAlbum = () => {
+    if (!selectedAlbum) return;
+    setIsEditingAlbum(true);
+  };
+
+  const onCancelEditAlbum = () => {
+    if (!selectedAlbum) return;
+    setIsEditingAlbum(false);
+    setEditTitle(selectedAlbum.title || '');
+    setEditDescription(selectedAlbum.description || '');
+    setEditEventId(selectedAlbum.event_id || '');
+  };
+
+  const onSaveEditAlbum = async () => {
+    if (!selectedAlbum) return;
+    const newTitle = editTitle.trim();
+    if (!newTitle) return;
+    setEditSaving(true);
+    try {
+      const { error } = await supabase
+        .from('galleries')
+        .update({
+          title: newTitle,
+          description: editDescription.trim() || null,
+          event_id: editEventId || null,
+        })
+        .eq('id', selectedAlbum.id);
+      if (error) throw error;
+      // reflect local state
+      const updated: GalleryItem = {
+        ...selectedAlbum,
+        title: newTitle,
+        description: editDescription.trim() || undefined,
+        event_id: editEventId || null,
+      } as GalleryItem;
+      setSelectedAlbum(updated);
+      // refresh list view
+      await loadGalleries();
+      setIsEditingAlbum(false);
+    } catch (err) {
+      console.error('Failed to update album', err);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const onDeleteAlbum = async () => {
+    if (!selectedAlbum) return;
+    setDeleting(true);
+    try {
+      // 1) Fetch all photo paths to remove from storage
+      const { data: photos, error: pErr } = await supabase
+        .from('gallery_photos')
+        .select('image_path')
+        .eq('gallery_id', selectedAlbum.id);
+      if (pErr) throw pErr;
+      const paths = (photos || [])
+        .map((p: any) => p.image_path)
+        .filter((p: string | null) => !!p);
+
+      if (paths.length > 0) {
+        const { error: rmErr } = await supabase.storage.from(BUCKET_ID).remove(paths);
+        if (rmErr) console.warn('Some images may not have been removed from storage:', rmErr);
+      }
+
+      // 2) Delete photo rows
+      const { error: delPhotosErr } = await supabase
+        .from('gallery_photos')
+        .delete()
+        .eq('gallery_id', selectedAlbum.id);
+      if (delPhotosErr) throw delPhotosErr;
+
+      // 3) Delete gallery row
+      const { error: delGalleryErr } = await supabase
+        .from('galleries')
+        .delete()
+        .eq('id', selectedAlbum.id);
+      if (delGalleryErr) throw delGalleryErr;
+
+      // refresh grid and close modal
+      await loadGalleries();
+      closeAlbumView();
+    } catch (err) {
+      console.error('Failed to delete album', err);
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(false);
+    }
+  };
+
+  const onDownloadCurrentPhoto = async () => {
+    const current = albumPhotos[currentPhotoIndex];
+    if (!current?.image_url) return;
+    setDownloading(true);
+    try {
+      const response = await fetch(current.image_url, { mode: 'cors' });
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      // derive filename from url, fallback to album-title-index
+      const urlPath = current.image_url.split('?')[0];
+      const fromUrl = urlPath.substring(urlPath.lastIndexOf('/') + 1) || 'photo.jpg';
+      const safeTitle = (selectedAlbum?.title || 'album').replace(/[^a-z0-9\-_.]+/gi, '_');
+      const fallback = `${safeTitle}_${currentPhotoIndex + 1}.jpg`;
+      link.href = url;
+      link.download = fromUrl || fallback;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download image', err);
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const nextPhoto = () => {
@@ -362,20 +499,121 @@ const AdminGallery: React.FC = () => {
             {/* Header */}
             <div className="flex items-center justify-between p-4 sm:p-6 border-b">
               <div className="flex-1 min-w-0">
-                <h2 className="text-lg sm:text-2xl font-bold text-gray-800 truncate">{selectedAlbum.title}</h2>
-                {selectedAlbum.description && (
-                  <p className="text-gray-600 mt-1 text-sm sm:text-base line-clamp-2">{selectedAlbum.description}</p>
+                {!isEditingAlbum ? (
+                  <>
+                    <h2 className="text-lg sm:text-2xl font-bold text-gray-800 truncate">{selectedAlbum.title}</h2>
+                    {selectedAlbum.description && (
+                      <p className="text-gray-600 mt-1 text-sm sm:text-base line-clamp-2">{selectedAlbum.description}</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-base sm:text-lg px-3 py-2"
+                      placeholder="Album title"
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <select
+                        value={editEventId}
+                        onChange={(e) => setEditEventId(e.target.value)}
+                        className="w-full rounded-md border border-gray-300 focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+                      >
+                        <option value="">— No related event —</option>
+                        {events.map(ev => (
+                          <option key={ev.id} value={ev.id}>{ev.title} — {new Date(ev.event_date).toLocaleDateString()}</option>
+                        ))}
+                      </select>
+                      <input
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        className="w-full rounded-md border border-gray-300 focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+                        placeholder="Description (optional)"
+                      />
+                    </div>
+                  </div>
                 )}
                 <p className="text-xs sm:text-sm text-gray-500 mt-2">
                   {albumPhotos.length} photo{albumPhotos.length !== 1 ? 's' : ''}
                 </p>
               </div>
-              <button
-                onClick={closeAlbumView}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 ml-2"
-              >
-                <X className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
-              </button>
+              <div className="flex items-center gap-2 ml-2">
+                {/* View toggle */}
+                <div className="hidden sm:inline-flex rounded-lg border p-1 bg-white shadow-sm mr-1">
+                  <button
+                    onClick={() => setViewMode('single')}
+                    className={`px-2 py-1 text-xs rounded-md flex items-center gap-1 ${viewMode === 'single' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                    title="Single view"
+                  >
+                    <ImageIcon className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className={`px-2 py-1 text-xs rounded-md flex items-center gap-1 ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                    title="Grid view"
+                  >
+                    <LayoutGrid className="w-3 h-3" />
+                  </button>
+                </div>
+                {!isEditingAlbum ? (
+                  <>
+                    <button
+                      onClick={onStartEditAlbum}
+                      className="hidden sm:inline-flex items-center gap-1 px-3 py-2 rounded-md border text-sm hover:bg-gray-50"
+                    >
+                      <Pencil className="w-4 h-4" /> Edit
+                    </button>
+                    {!deleteConfirm ? (
+                      <button
+                        onClick={() => setDeleteConfirm(true)}
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-md border text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" /> Delete
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-red-600 flex items-center gap-1"><XCircle className="w-4 h-4" /> Confirm?</span>
+                        <button
+                          onClick={onDeleteAlbum}
+                          disabled={deleting}
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-60"
+                        >
+                          {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm(false)}
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-md border text-sm hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={onSaveEditAlbum}
+                      disabled={editSaving}
+                      className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      {editSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
+                    </button>
+                    <button
+                      onClick={onCancelEditAlbum}
+                      className="inline-flex items-center gap-1 px-3 py-2 rounded-md border text-sm hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={closeAlbumView}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+                >
+                  <X className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
+                </button>
+              </div>
             </div>
 
             {/* Content */}
@@ -391,42 +629,71 @@ const AdminGallery: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {/* Main Photo Display */}
-                  <div className="relative">
-                    <div className="aspect-video bg-gray-100 rounded-xl overflow-hidden">
-                      <img
-                        src={albumPhotos[currentPhotoIndex]?.image_url}
-                        alt={`Photo ${currentPhotoIndex + 1}`}
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                    
-                    {/* Navigation Arrows */}
-                    {albumPhotos.length > 1 && (
-                      <>
-                        <button
-                          onClick={prevPhoto}
-                          className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-colors"
-                        >
-                          <ChevronLeft className="w-6 h-6 text-gray-700" />
-                        </button>
-                        <button
-                          onClick={nextPhoto}
-                          className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-colors"
-                        >
-                          <ChevronRight className="w-6 h-6 text-gray-700" />
-                        </button>
-                      </>
-                    )}
+                  {viewMode === 'single' ? (
+                    // Main Photo Display
+                    <div className="relative">
+                      <div className="aspect-video bg-gray-100 rounded-xl overflow-hidden">
+                        <img
+                          src={albumPhotos[currentPhotoIndex]?.image_url}
+                          alt={`Photo ${currentPhotoIndex + 1}`}
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                      
+                      {/* Navigation Arrows */}
+                      {albumPhotos.length > 1 && (
+                        <>
+                          <button
+                            onClick={prevPhoto}
+                            className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-colors"
+                          >
+                            <ChevronLeft className="w-6 h-6 text-gray-700" />
+                          </button>
+                          <button
+                            onClick={nextPhoto}
+                            className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-colors"
+                          >
+                            <ChevronRight className="w-6 h-6 text-gray-700" />
+                          </button>
+                        </>
+                      )}
 
-                    {/* Photo Counter */}
-                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-sm">
-                      {currentPhotoIndex + 1} / {albumPhotos.length}
-                    </div>
-                  </div>
+                      {/* Photo Counter */}
+                      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-sm">
+                        {currentPhotoIndex + 1} / {albumPhotos.length}
+                      </div>
 
-                  {/* Thumbnail Grid */}
-                  {albumPhotos.length > 1 && (
+                      {/* Download Button */}
+                      <button
+                        onClick={onDownloadCurrentPhoto}
+                        disabled={downloading}
+                        className="absolute bottom-4 right-4 bg-white/90 hover:bg-white rounded-full px-3 py-2 shadow-lg transition-colors inline-flex items-center gap-2 text-sm disabled:opacity-60"
+                        title="Download image"
+                      >
+                        {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                        <span className="hidden sm:inline">Download</span>
+                      </button>
+                    </div>
+                  ) : (
+                    // Grid view
+                    <div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
+                        {albumPhotos.map((photo, index) => (
+                          <button
+                            key={photo.id}
+                            onClick={() => { setCurrentPhotoIndex(index); setViewMode('single'); }}
+                            className={`group relative aspect-square rounded-lg overflow-hidden border ${index === currentPhotoIndex ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'}`}
+                            title={`Open photo ${index + 1}`}
+                          >
+                            <img src={photo.image_url} alt={`Photo ${index + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Thumbnail Grid (only in single view) */}
+                  {viewMode === 'single' && albumPhotos.length > 1 && (
                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                       {albumPhotos.map((photo, index) => (
                         <button

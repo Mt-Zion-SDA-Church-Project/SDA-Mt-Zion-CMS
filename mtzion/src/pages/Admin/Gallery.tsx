@@ -249,10 +249,35 @@ const AdminGallery: React.FC = () => {
   };
 
   return (
-    <div className="p-4 pb-6 h-full flex flex-col">
+    <div className="p-2 sm:p-4 pb-6 h-full flex flex-col">
       {/* Sticky page header */}
       <div className="sticky top-0 z-10 bg-gray-50/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 py-2">
-        <div className="flex items-center gap-3">
+        {/* Mobile layout */}
+        <div className="lg:hidden">
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-lg font-bold text-gray-800">Gallery</h1>
+            <div className="inline-flex rounded-lg border p-1 bg-white shadow-sm">
+              <button onClick={() => setActiveTab('upload')} className={`px-2 py-1 text-xs rounded-md flex items-center gap-1 ${activeTab === 'upload' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>
+                <UploadCloud className="w-3 h-3" /> Upload
+              </button>
+              <button onClick={() => setActiveTab('browse')} className={`px-2 py-1 text-xs rounded-md flex items-center gap-1 ${activeTab === 'browse' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}>
+                <Images className="w-3 h-3" /> Browse
+              </button>
+            </div>
+          </div>
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search albums"
+              className="pl-9 pr-4 py-2 w-full rounded-md border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+            />
+          </div>
+        </div>
+        
+        {/* Desktop layout */}
+        <div className="hidden lg:flex items-center gap-3">
           <h1 className="text-2xl font-bold text-gray-800 whitespace-nowrap">Gallery</h1>
           {/* Inline search between title and action buttons */}
           <div className="relative flex-1 max-w-xl">
@@ -278,7 +303,7 @@ const AdminGallery: React.FC = () => {
       {/* Scrollable content area */}
       <div className="mt-2 flex-1 overflow-y-auto">
       {activeTab === 'upload' && (
-        <form onSubmit={onCreateAlbumAndUpload} className="w-3/4 mx-auto bg-white rounded-xl border p-6 shadow-sm">
+        <form onSubmit={onCreateAlbumAndUpload} className="w-full sm:w-3/4 mx-auto bg-white rounded-xl border p-4 sm:p-6 shadow-sm">
           <div className="grid grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Album Title</label>
@@ -315,7 +340,7 @@ const AdminGallery: React.FC = () => {
 
       {activeTab === 'browse' && (
         <div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-24">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 pb-24">
             {loading ? (
               <div className="col-span-full flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
             ) : filteredGalleries.length === 0 ? (
@@ -332,29 +357,29 @@ const AdminGallery: React.FC = () => {
 
       {/* Album Detail Modal */}
       {selectedAlbum && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-800">{selectedAlbum.title}</h2>
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg sm:text-2xl font-bold text-gray-800 truncate">{selectedAlbum.title}</h2>
                 {selectedAlbum.description && (
-                  <p className="text-gray-600 mt-1">{selectedAlbum.description}</p>
+                  <p className="text-gray-600 mt-1 text-sm sm:text-base line-clamp-2">{selectedAlbum.description}</p>
                 )}
-                <p className="text-sm text-gray-500 mt-2">
+                <p className="text-xs sm:text-sm text-gray-500 mt-2">
                   {albumPhotos.length} photo{albumPhotos.length !== 1 ? 's' : ''}
                 </p>
               </div>
               <button
                 onClick={closeAlbumView}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 ml-2"
               >
-                <X className="w-6 h-6 text-gray-600" />
+                <X className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
               </button>
             </div>
 
             {/* Content */}
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               {photosLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
@@ -402,7 +427,7 @@ const AdminGallery: React.FC = () => {
 
                   {/* Thumbnail Grid */}
                   {albumPhotos.length > 1 && (
-                    <div className="grid grid-cols-6 gap-2">
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                       {albumPhotos.map((photo, index) => (
                         <button
                           key={photo.id}

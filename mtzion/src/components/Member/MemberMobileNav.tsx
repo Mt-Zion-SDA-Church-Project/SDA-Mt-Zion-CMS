@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu, Home, CreditCard, Calendar, BookOpen, Heart, QrCode } from 'lucide-react';
+import { Menu, Home, CreditCard, Calendar, BookOpen, Heart, QrCode, Bell, Images, X } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import logo from '../../assets/sda-logo.png';
 
 type MenuItem = {
@@ -27,6 +28,26 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = React.useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  useEffect(() => {
+    const loadNotifications = async () => {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id, type, title, message, data, is_read, created_at')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (!error) setNotifications(data || []);
+    };
+    loadNotifications();
+
+    const channel = supabase
+      .channel('mobile-notifications')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => loadNotifications())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const onNavigate = (href: string) => {
     setOpen(false);
@@ -34,6 +55,39 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
   };
 
   const isActive = (href: string) => location.pathname === href;
+
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case 'event': return Calendar;
+      case 'birthday': return Heart;
+      case 'receipt': return CreditCard;
+      case 'announcement': return BookOpen;
+      case 'gallery': return Images;
+      default: return Bell;
+    }
+  };
+
+  const getNotificationLink = (notification: any) => {
+    switch (notification.type) {
+      case 'receipt':
+        return `/member/offertory/receipt/${notification.data?.receipt_id}`;
+      case 'event':
+        return '/member/events';
+      case 'birthday':
+        return '/member/birthdays';
+      case 'gallery':
+        return '/member/gallery';
+      default:
+        return '/member';
+    }
+  };
+
+  const markAsRead = async (id: string) => {
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', id);
+  };
 
   return (
     <div className="bg-white shadow-sm border-b lg:hidden">
@@ -45,14 +99,80 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
             <p className="text-xs text-gray-600">Member Portal</p>
           </div>
         </div>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
-          aria-label="Open navigation menu"
-          aria-expanded={open}
-        >
-          <Menu className={`w-6 h-6 text-gray-700 transition-transform ${open ? 'rotate-90' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Notifications */}
+          <div className="relative">
+            <button 
+              onClick={() => setNotificationsOpen(!notificationsOpen)} 
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200 relative"
+            >
+              <Bell className="w-5 h-5 text-gray-700" />
+              {notifications.filter(n => !n.is_read).length > 0 && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  {notifications.filter(n => !n.is_read).length}
+                </span>
+              )}
+            </button>
+            
+            {notificationsOpen && (
+              <div className="absolute right-0 mt-2 w-80 bg-white border rounded-lg shadow-lg z-50 max-h-96 overflow-hidden">
+                <div className="px-4 py-3 border-b flex items-center justify-between">
+                  <span className="text-sm font-semibold text-gray-800">Notifications</span>
+                  <button 
+                    onClick={() => setNotificationsOpen(false)}
+                    className="p-1 hover:bg-gray-100 rounded"
+                  >
+                    <X className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
+                <div className="max-h-64 overflow-auto">
+                  {notifications.length === 0 ? (
+                    <div className="p-4 text-sm text-gray-600 text-center">No notifications</div>
+                  ) : (
+                    notifications.map((n) => {
+                      const Icon = getNotificationIcon(n.type);
+                      return (
+                        <button
+                          key={n.id}
+                          onClick={() => {
+                            markAsRead(n.id);
+                            onNavigate(getNotificationLink(n));
+                            setNotificationsOpen(false);
+                          }}
+                          className={`w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-gray-50 ${!n.is_read ? 'bg-blue-50' : ''}`}
+                        >
+                          <Icon className="w-4 h-4 mt-0.5 text-gray-500 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-800 text-sm">{n.title}</div>
+                            {n.message && (
+                              <div className="text-xs text-gray-600 mt-1 line-clamp-2">{n.message}</div>
+                            )}
+                            <div className="text-xs text-gray-500 mt-1">
+                              {new Date(n.created_at).toLocaleString()}
+                            </div>
+                          </div>
+                          {!n.is_read && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1"></div>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Menu */}
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+            aria-label="Open navigation menu"
+            aria-expanded={open}
+          >
+            <Menu className={`w-6 h-6 text-gray-700 transition-transform ${open ? 'rotate-90' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {open && (

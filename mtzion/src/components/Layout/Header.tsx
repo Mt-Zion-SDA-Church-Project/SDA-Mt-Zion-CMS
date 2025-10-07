@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Menu, Bell, LogOut, User, Calendar, Heart, FileText, Gift } from 'lucide-react';
+import { Menu, Bell, LogOut, User, Calendar, Heart, FileText, Gift, Images } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
@@ -36,6 +36,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
       case 'birthday': return Heart;
       case 'receipt': return FileText;
       case 'announcement': return Gift;
+      case 'gallery': return Images;
       default: return Bell;
     }
   };
@@ -48,6 +49,8 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
         return '/member/events';
       case 'birthday':
         return '/member/birthdays';
+      case 'gallery':
+        return '/member/gallery';
       default:
         return '/member';
     }

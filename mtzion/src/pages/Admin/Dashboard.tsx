@@ -49,6 +49,17 @@ const AdminDashboard: React.FC = () => {
     loadDashboardData();
   }, []);
 
+  // Realtime refresh when financial summaries change
+  useEffect(() => {
+    const channel = supabase
+      .channel('cash_offering_accounts_dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_offering_accounts' }, () => {
+        loadDashboardData();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
@@ -98,12 +109,12 @@ const AdminDashboard: React.FC = () => {
           .gte('tithe_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
           .lte('tithe_date', new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString()),
         
-        // Monthly offerings
+        // Monthly offertory (Financial summaries)
         supabase
-          .from('offerings')
-          .select('amount')
-          .gte('offering_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
-          .lte('offering_date', new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString()),
+          .from('cash_offering_accounts')
+          .select('total, service_date')
+          .gte('service_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
+          .lte('service_date', new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString()),
         
         // Recent activities
         supabase
@@ -126,7 +137,7 @@ const AdminDashboard: React.FC = () => {
 
       // Calculate totals
       const totalTithes = tithesResult.data?.reduce((sum, tithe) => sum + Number(tithe.amount), 0) || 0;
-      const totalOfferings = offeringsResult.data?.reduce((sum, offering) => sum + Number(offering.amount), 0) || 0;
+      const totalOfferings = offeringsResult.data?.reduce((sum, row) => sum + Number((row as any).total || 0), 0) || 0;
 
       // Format recent activities
       const formattedActivities = activitiesResult.data?.map(activity => ({
@@ -255,8 +266,8 @@ const AdminDashboard: React.FC = () => {
       changeType: 'increase',
     },
     {
-      name: 'Monthly Tithes',
-      value: formatCurrency(stats.monthlyTithes),
+      name: 'Monthly Offertory',
+      value: formatCurrency(stats.monthlyOfferings),
       icon: Heart,
       color: 'bg-yellow-500',
       change: '+8.5%',

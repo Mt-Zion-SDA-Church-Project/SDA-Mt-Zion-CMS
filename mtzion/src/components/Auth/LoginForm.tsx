@@ -110,7 +110,7 @@ const LoginForm: React.FC = () => {
             <div className="mx-auto w-16 h-16 mb-4">
               <img src={logo} alt="SDA Logo" className="w-16 h-16 object-contain" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">SDA Mt. Zion</h1>
+            <h1 className="text-2xl font-bold text-gray-800">Seventh-Day Adventist Church, Mt. Zion - Kigoma</h1>
             <p className="text-gray-600">Church Management System</p>
           </div>
 
@@ -177,7 +177,7 @@ const LoginForm: React.FC = () => {
 
         <div className="text-center mt-6 relative z-10">
           <p className="text-white/90 text-sm drop-shadow-lg backdrop-blur-sm">
-            © 2024 SDA Mt. Zion Church. All rights reserved.
+            © 2024 Seventh-Day Adventist Church, Mt. Zion - Kigoma. All rights reserved.
           </p>
         </div>
       </div>

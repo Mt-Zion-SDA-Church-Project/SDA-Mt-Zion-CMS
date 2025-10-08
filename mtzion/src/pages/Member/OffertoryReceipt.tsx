@@ -65,7 +65,7 @@ const OffertoryReceipt: React.FC = () => {
           <div className="flex items-center gap-3">
             <img src={logo} alt="SDA Logo" className="w-12 h-12 object-contain" />
             <div>
-              <div className="text-xl font-semibold">SDA Mt. Zion Church</div>
+              <div className="text-xl font-semibold">Seventh-Day Adventist Church, Mt. Zion - Kigoma</div>
               <div className="text-sm text-gray-600">Official Offertory Receipt</div>
             </div>
           </div>

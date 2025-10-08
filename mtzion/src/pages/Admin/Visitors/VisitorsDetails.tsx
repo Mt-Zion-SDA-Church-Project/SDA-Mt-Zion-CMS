@@ -42,7 +42,7 @@ const VisitorsDetails: React.FC = () => {
         {/* Print-only header */}
         <div className="hidden print:flex items-center gap-3 p-4">
           <img src={sdaLogo} alt="SDA Logo" className="w-10 h-10 object-contain" />
-          <div className="text-base font-semibold">SDA Mt. Zion - Registered Visitors List</div>
+          <div className="text-base font-semibold">Seventh-Day Adventist Church, Mt. Zion - Kigoma - Registered Visitors List</div>
         </div>
         {/* Header */}
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">

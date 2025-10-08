@@ -3,44 +3,42 @@ import { supabase } from '../../../lib/supabase';
 import logo from '../../../assets/sda-logo.png';
 
 type KnownKey =
-  | 'trust_fund'
-  | 'ekitundu_10'
+  // Trust Fund
+  | 'tithe_10_percent'
   | 'camp_meeting_offering'
-  | 'ssabiti_13th'
+  | '13th_sabbath'
   | 'prime_radio'
-  | 'hope_channel_tv_uganda'
-  | 'eddwaliro_kireka'
-  | 'ebf_development_fund'
-  | 'ebirabo_ebyawamu'
-  | 'essomero_lya_ssabbiti'
-  | 'okwebaza'
-  | 'okusinza'
-  | 'ebirabo_ebirala'
-  | 'okuzimba'
-  | 'ekyemisana'
+  | 'kireka_adventist_church'
+  // Combined Offerings
+  | 'sabbath_school'
+  | 'thanks_giving'
+  | 'devine'
+  // Other Offerings
+  | 'local_church_building'
+  | 'district_project_fund'
+  | 'lunch'
   | 'social_and_welfare'
-  | 'camp_meeting_expense'
-  | 'enjiri';
+  | 'evangelism'
+  | 'nbf_development_fund';
 
 const KNOWN_LABELS: Record<KnownKey, string> = {
-  trust_fund: 'Trust Fund',
-  ekitundu_10: "Ekitundu Ky'ekikumi (10%)",
+  // Trust Fund
+  tithe_10_percent: 'Tithe (10%)',
   camp_meeting_offering: 'Camp Meeting Offering',
-  ssabiti_13th: 'Ssabiti 13th',
+  '13th_sabbath': '13th Sabbath',
   prime_radio: 'Prime Radio',
-  hope_channel_tv_uganda: 'Hope Channel Tv Uganda',
-  eddwaliro_kireka: 'Eddwaliro (Kireka Adv. Church)',
-  ebf_development_fund: 'EBF Development Fund',
-  ebirabo_ebyawamu: "Ebirabo Eby'awamu",
-  essomero_lya_ssabbiti: 'Essomero lya Ssabbiti',
-  okwebaza: 'Okwebaza',
-  okusinza: 'Okusinza',
-  ebirabo_ebirala: 'Ebirabo Ebirala',
-  okuzimba: 'Okuzimba',
-  ekyemisana: 'Ekyemisana',
-  social_and_welfare: 'Social and Welfare',
-  camp_meeting_expense: 'Camp Meeting Expense',
-  enjiri: 'Enjiri',
+  kireka_adventist_church: 'Kireka Adventist Church',
+  // Combined Offerings
+  sabbath_school: 'Sabbath School',
+  thanks_giving: 'Thanks Giving',
+  devine: 'Devine',
+  // Other Offerings
+  local_church_building: 'Local Church Building',
+  district_project_fund: 'District Project Fund',
+  lunch: 'Lunch',
+  social_and_welfare: 'Social and welfare',
+  evangelism: 'Evangelism',
+  nbf_development_fund: 'NBF Development Fund',
 };
 
 type Row = { id: string; label: string; amount: string; key?: KnownKey };
@@ -89,26 +87,22 @@ const AddTithe: React.FC = () => {
     try {
       if (!serviceDate) throw new Error('Please select the service date');
 
-      // Map known categories to fixed columns, sum custom into ebirabo_ebirala
+      // Map known categories to fixed columns, sum custom into other_offerings
       const base: Record<KnownKey, number> = {
-        trust_fund: 0,
-        ekitundu_10: 0,
+        tithe_10_percent: 0,
         camp_meeting_offering: 0,
-        ssabiti_13th: 0,
+        '13th_sabbath': 0,
         prime_radio: 0,
-        hope_channel_tv_uganda: 0,
-        eddwaliro_kireka: 0,
-        ebf_development_fund: 0,
-        ebirabo_ebyawamu: 0,
-        essomero_lya_ssabbiti: 0,
-        okwebaza: 0,
-        okusinza: 0,
-        ebirabo_ebirala: 0,
-        okuzimba: 0,
-        ekyemisana: 0,
+        kireka_adventist_church: 0,
+        sabbath_school: 0,
+        thanks_giving: 0,
+        devine: 0,
+        local_church_building: 0,
+        district_project_fund: 0,
+        lunch: 0,
         social_and_welfare: 0,
-        camp_meeting_expense: 0,
-        enjiri: 0,
+        evangelism: 0,
+        nbf_development_fund: 0,
       };
 
       for (const r of rows) {
@@ -116,7 +110,7 @@ const AddTithe: React.FC = () => {
         if (r.key) {
           base[r.key] += amt;
         } else {
-          base.ebirabo_ebirala += amt; // aggregate unknown/custom
+          base.nbf_development_fund += amt; // aggregate unknown/custom
         }
       }
 
@@ -147,7 +141,7 @@ const AddTithe: React.FC = () => {
             <div className="flex items-center gap-3">
               <img src={logo} alt="SDA Logo" className="w-10 h-10" />
               <div>
-                <div className="text-base font-semibold">SDA Mt. Zion Church</div>
+                <div className="text-base font-semibold">Seventh-Day Adventist Church, Mt. Zion - Kigoma</div>
                 <div className="text-xs text-gray-600">Add Tithes</div>
               </div>
             </div>
@@ -214,7 +208,7 @@ const AddTithe: React.FC = () => {
             <div className="text-sm text-gray-600">Omugatte (Total)</div>
             <div className="text-2xl font-semibold text-gray-800">{formatUGX(total)}</div>
           </div>
-          <div className="mt-2 text-xs text-gray-500">Custom categories are aggregated under “Ebirabo Ebirala” when saved.</div>
+          <div className="mt-2 text-xs text-gray-500">Custom categories are aggregated under "NBF Development Fund" when saved.</div>
 
           <div className="mt-6 flex items-center justify-end gap-2 print:hidden">
             <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-primary text-white rounded hover:opacity-90 text-sm disabled:opacity-60">{saving ? 'Saving…' : 'Save Summary'}</button>

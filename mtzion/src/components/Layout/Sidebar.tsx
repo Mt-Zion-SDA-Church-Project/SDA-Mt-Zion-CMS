@@ -78,8 +78,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       path: '/admin/givings',
       hasSubmenu: true,
       submenu: [
-        { icon: Gift, label: 'Tithes Paid', path: '/admin/givings/tithes' },
-        { icon: UserPlus, label: 'Add Tithes', path: '/admin/givings/tithes/add' },
+        { icon: Gift, label: 'Offertory Paid', path: '/admin/givings/tithes' },
+        { icon: UserPlus, label: 'Add Offertory', path: '/admin/givings/tithes/add' },
       ]
     },
     { 
@@ -138,7 +138,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
           <img src={logo} alt="SDA Mt. Zion Logo" className="w-16 h-16 object-contain" />
           {!isCollapsed && (
             <div>
-              <h1 className="text-lg font-bold">SDA Mt. Zion</h1>
+              <h1 className="text-lg font-bold">Seventh-Day Adventist Church, Mt. Zion - Kigoma</h1>
               <p className="text-xs text-blue-200">Church Management</p>
             </div>
           )}

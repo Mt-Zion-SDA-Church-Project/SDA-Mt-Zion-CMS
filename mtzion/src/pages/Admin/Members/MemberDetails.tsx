@@ -265,7 +265,7 @@ const MemberDetails: React.FC = () => {
         <div className="hidden print:flex items-center gap-3 p-4">
           <img src={sdaLogo} alt="SDA Logo" className="w-10 h-10 object-contain" />
           <div>
-            <div className="text-base font-semibold">SDA Mt. Zion - Church Members List</div>
+            <div className="text-base font-semibold">Seventh-Day Adventist Church, Mt. Zion - Kigoma - Church Members List</div>
           </div>
         </div>
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between hide-on-print">

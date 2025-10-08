@@ -11,14 +11,14 @@ export interface CredentialsEmailData {
 export const sendCredentialsEmail = async (data: CredentialsEmailData): Promise<void> => {
   try {
     // Create email content
-    const emailSubject = 'Welcome to SDA Mt. Zion Church Management System - Your Login Credentials';
+    const emailSubject = 'Welcome to Seventh-Day Adventist Church, Mt. Zion - Kigoma Church Management System - Your Login Credentials';
     
     const emailContent = `
       <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
         <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-            <h1 style="margin: 0; font-size: 24px;">Welcome to SDA Mt. Zion Church</h1>
+            <h1 style="margin: 0; font-size: 24px;">Welcome to Seventh-Day Adventist Church, Mt. Zion - Kigoma</h1>
             <p style="margin: 10px 0 0 0; opacity: 0.9;">Church Management System</p>
           </div>
           
@@ -27,7 +27,7 @@ export const sendCredentialsEmail = async (data: CredentialsEmailData): Promise<
             
             <p>Dear ${data.fullName},</p>
             
-            <p>Your email has been successfully confirmed. Below are your login credentials for the SDA Mt. Zion Church Management System:</p>
+            <p>Your email has been successfully confirmed. Below are your login credentials for the Seventh-Day Adventist Church, Mt. Zion - Kigoma Church Management System:</p>
             
             <div style="background: white; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745; margin: 20px 0;">
               <h3 style="color: #28a745; margin-top: 0;">Login Information</h3>
@@ -49,7 +49,7 @@ export const sendCredentialsEmail = async (data: CredentialsEmailData): Promise<
             <hr style="border: none; border-top: 1px solid #dee2e6; margin: 30px 0;">
             
             <p style="font-size: 12px; color: #6c757d; text-align: center;">
-              This is an automated message from SDA Mt. Zion Church Management System.<br>
+              This is an automated message from Seventh-Day Adventist Church, Mt. Zion - Kigoma Church Management System.<br>
               Please do not reply to this email.
             </p>
           </div>

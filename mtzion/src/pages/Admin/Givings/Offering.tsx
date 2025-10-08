@@ -33,22 +33,24 @@ const Offering: React.FC = () => {
 
         {/* Table */}
         <div className="px-4 pb-4 overflow-x-auto">
-          <table className="min-w-full text-sm border border-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left p-2 border-b">MEMBER NAME</th>
-                <th className="text-left p-2 border-b">MOBILE NO.</th>
-                <th className="text-left p-2 border-b">TRANSACTION CODE</th>
-                <th className="text-left p-2 border-b">AMOUNT</th>
-                <th className="text-left p-2 border-b">DATE & TIME</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="p-2 text-gray-600" colSpan={5}>No data available in table</td>
-              </tr>
-            </tbody>
-          </table>
+            <table className="min-w-full text-sm border border-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left p-2 border-b">MEMBER NAME</th>
+                  <th className="text-left p-2 border-b">MOBILE NO.</th>
+                  <th className="text-left p-2 border-b">CATEGORY</th>
+                  <th className="text-left p-2 border-b">SUBCATEGORY</th>
+                  <th className="text-left p-2 border-b">TRANSACTION CODE</th>
+                  <th className="text-left p-2 border-b">AMOUNT</th>
+                  <th className="text-left p-2 border-b">DATE & TIME</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="p-2 text-gray-600" colSpan={7}>No data available in table</td>
+                </tr>
+              </tbody>
+            </table>
 
           {/* Footer */}
           <div className="flex items-center justify-between text-sm text-gray-600 mt-3">

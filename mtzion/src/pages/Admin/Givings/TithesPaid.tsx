@@ -123,7 +123,7 @@ const TithesPaid: React.FC = () => {
     <div class="header">
       <img class="logo" src="${logo}" alt="SDA Logo" />
       <div>
-        <div style="font-weight:700;">SDA Mt. Zion Church</div>
+        <div style="font-weight:700;">Seventh-Day Adventist Church, Mt. Zion - Kigoma</div>
         <div class="subtitle">Financial Summary</div>
       </div>
     </div>
@@ -155,7 +155,7 @@ const TithesPaid: React.FC = () => {
           <div className="flex items-center gap-3">
             <img src={logo} alt="SDA Logo" className="w-10 h-10" />
             <div>
-              <div className="text-base font-semibold">SDA Mt. Zion Church</div>
+              <div className="text-base font-semibold">Seventh-Day Adventist Church, Mt. Zion - Kigoma</div>
               <div className="text-xs text-gray-600">Financial Summaries</div>
             </div>
           </div>

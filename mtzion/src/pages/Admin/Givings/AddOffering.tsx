@@ -1,6 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const AddOffering: React.FC = () => {
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedSubcategory, setSelectedSubcategory] = useState('');
+
+  const offeringCategories = {
+    'Trust Fund': [
+      'Tithe (10%)',
+      'Camp Meeting Offering',
+      '13th Sabbath',
+      'Prime Radio',
+      'Kireka Adventist Church'
+    ],
+    'Combined Offerings': [
+      'Sabbath School',
+      'Thanks Giving',
+      'Devine'
+    ],
+    'Other Offerings': [
+      'Local Church Building',
+      'District Project Fund',
+      'Lunch',
+      'Social and welfare',
+      'Evangelism',
+      'NBF Development Fund'
+    ]
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -16,6 +42,37 @@ const AddOffering: React.FC = () => {
           </div>
           <form className="p-6 space-y-4">
             <div>
+              <label className="block text-sm text-gray-600 mb-1">Category</label>
+              <select 
+                className="w-full border rounded px-3 py-2"
+                value={selectedCategory}
+                onChange={(e) => {
+                  setSelectedCategory(e.target.value);
+                  setSelectedSubcategory('');
+                }}
+              >
+                <option value="">Select Category</option>
+                {Object.keys(offeringCategories).map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </div>
+            {selectedCategory && offeringCategories[selectedCategory as keyof typeof offeringCategories].length > 0 && (
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Subcategory</label>
+                <select 
+                  className="w-full border rounded px-3 py-2"
+                  value={selectedSubcategory}
+                  onChange={(e) => setSelectedSubcategory(e.target.value)}
+                >
+                  <option value="">Select Subcategory</option>
+                  {offeringCategories[selectedCategory as keyof typeof offeringCategories].map(subcategory => (
+                    <option key={subcategory} value={subcategory}>{subcategory}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
               <label className="block text-sm text-gray-600 mb-1">Amount</label>
               <input className="w-full border rounded px-3 py-2" />
             </div>
@@ -24,7 +81,7 @@ const AddOffering: React.FC = () => {
               <input className="w-full border rounded px-3 py-2" />
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">mobile Number</label>
+              <label className="block text-sm text-gray-600 mb-1">Mobile Number</label>
               <input className="w-full border rounded px-3 py-2" />
             </div>
             <div>
@@ -62,6 +119,8 @@ const AddOffering: React.FC = () => {
                 <tr>
                   <th className="text-left p-2 border-b w-10"> </th>
                   <th className="text-left p-2 border-b">NAME</th>
+                  <th className="text-left p-2 border-b">CATEGORY</th>
+                  <th className="text-left p-2 border-b">SUBCATEGORY</th>
                   <th className="text-left p-2 border-b">AMOUNT</th>
                   <th className="text-left p-2 border-b">TRANSACTION ID</th>
                   <th className="text-left p-2 border-b">DATE</th>
@@ -70,7 +129,7 @@ const AddOffering: React.FC = () => {
               <tbody>
                 <tr>
                   <td className="p-2 border-b"><input type="checkbox" /></td>
-                  <td className="p-2 text-gray-600" colSpan={4}>No data available in table</td>
+                  <td className="p-2 text-gray-600" colSpan={6}>No data available in table</td>
                 </tr>
               </tbody>
             </table>

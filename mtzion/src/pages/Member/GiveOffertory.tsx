@@ -7,38 +7,42 @@ import paypalLogo from '../../assets/paypal.png';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 type KnownKey =
-  | 'trust_fund'
+  // Trust Fund
+  | 'tithe_10_percent'
   | 'camp_meeting_offering'
-  | 'ssabiti_13th'
+  | '13th_sabbath'
   | 'prime_radio'
-  | 'hope_channel_tv_uganda'
-  | 'ebf_development_fund'
-  | 'ebirabo_ebyawamu'
-  | 'essomero_lya_ssabbiti'
-  | 'okwebaza'
-  | 'okusinza'
-  | 'ebirabo_ebirala'
-  | 'okuzimba'
-  | 'ekyemisana'
+  | 'kireka_adventist_church'
+  // Combined Offerings
+  | 'sabbath_school'
+  | 'thanks_giving'
+  | 'devine'
+  // Other Offerings
+  | 'local_church_building'
+  | 'district_project_fund'
+  | 'lunch'
   | 'social_and_welfare'
-  | 'enjiri';
+  | 'evangelism'
+  | 'nbf_development_fund';
 
 const KNOWN_LABELS: Record<KnownKey, string> = {
-  trust_fund: 'Trust Fund',
+  // Trust Fund
+  tithe_10_percent: 'Tithe (10%)',
   camp_meeting_offering: 'Camp Meeting Offering',
-  ssabiti_13th: 'Ssabiti 13th',
+  '13th_sabbath': '13th Sabbath',
   prime_radio: 'Prime Radio',
-  hope_channel_tv_uganda: 'Hope Channel Tv Uganda',
-  ebf_development_fund: 'EBF Development Fund',
-  ebirabo_ebyawamu: "Ebirabo Eby'awamu",
-  essomero_lya_ssabbiti: 'Essomero lya Ssabbiti',
-  okwebaza: 'Okwebaza',
-  okusinza: 'Okusinza',
-  ebirabo_ebirala: 'Ebirabo Ebirala',
-  okuzimba: 'Okuzimba',
-  ekyemisana: 'Ekyemisana',
-  social_and_welfare: 'Social and Welfare',
-  enjiri: 'Enjiri',
+  kireka_adventist_church: 'Kireka Adventist Church',
+  // Combined Offerings
+  sabbath_school: 'Sabbath School',
+  thanks_giving: 'Thanks Giving',
+  devine: 'Devine',
+  // Other Offerings
+  local_church_building: 'Local Church Building',
+  district_project_fund: 'District Project Fund',
+  lunch: 'Lunch',
+  social_and_welfare: 'Social and welfare',
+  evangelism: 'Evangelism',
+  nbf_development_fund: 'NBF Development Fund',
 };
 
 type Row = { id: string; label: string; amount: string; key?: KnownKey };

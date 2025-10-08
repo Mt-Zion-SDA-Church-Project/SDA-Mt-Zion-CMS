@@ -170,7 +170,7 @@ const TeensDetails: React.FC = () => {
         <div className="printable px-4 pb-4">
           <div className="hidden print:flex items-center mb-4">
             <img src={sdaLogo} alt="SDA Logo" className="w-10 h-10 object-contain mr-3" />
-            <h2 className="text-lg font-semibold">SDA Mt. Zion - Church Children List</h2>
+            <h2 className="text-lg font-semibold">Seventh-Day Adventist Church, Mt. Zion - Kigoma - Church Children List</h2>
           </div>
         {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
         {loading && <div className="text-sm text-gray-600 mb-2">Loading...</div>}

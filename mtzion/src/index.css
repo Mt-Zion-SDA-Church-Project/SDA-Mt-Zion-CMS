@@ -39,3 +39,35 @@
     display: none !important;
   }
 }
+
+/* Animated falling crosses */
+@keyframes dropCross {
+  0% {
+    transform: translateY(-10vh);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(110vh);
+    opacity: 0.6;
+  }
+}
+
+.cross-fall {
+  position: absolute;
+  top: -10%;
+  width: 20px;
+  height: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  /* Latin (holy) cross: longer vertical bar, shorter horizontal slightly above center */
+  background-image: linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+  background-size: 2px 24px, 14px 2px; /* vertical, horizontal */
+  background-position: center center, center 40%;
+  background-repeat: no-repeat;
+  animation-name: dropCross;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
+}

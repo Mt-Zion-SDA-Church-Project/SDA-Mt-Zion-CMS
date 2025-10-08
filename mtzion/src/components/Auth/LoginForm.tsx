@@ -8,6 +8,7 @@ import zion3 from '../../assets/zion-3.jpg';
 import zion4 from '../../assets/zion-4.jpg';
 import zion5 from '../../assets/zion-5.jpg';
 import zion6 from '../../assets/zion-6.jpg';
+import zionChoir from '../../assets/zion-choir.jpg';
 
 const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -65,117 +66,40 @@ const LoginForm: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
-      {/* SDA Colors Grid Background */}
-      <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 h-full">
-        {sdaBeliefs.map((belief, index) => (
-          <div key={index} className={`bg-gradient-to-br ${belief.gradient} relative overflow-hidden`}>
-            {/* Animated overlay pattern */}
-            <div className="absolute inset-0 opacity-10 animate-pulse">
-              <div className="absolute inset-0 bg-gradient-to-tr from-white/20 via-transparent to-transparent"></div>
-              <div className="absolute inset-0 bg-gradient-to-bl from-transparent via-white/10 to-transparent"></div>
-            </div>
-            
-            {/* Geometric pattern */}
-            <div 
-              className="absolute inset-0 opacity-5"
-              style={{
-                backgroundImage: `
-                  repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(255,255,255,0.1) 10deg, transparent 20deg),
-                  linear-gradient(45deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)
-                `,
-                backgroundSize: '40px 40px, 100px 100px'
-              }}
-            ></div>
-            
-            {/* Content - Positioned in corners */}
-            {index === 0 && (
-              <div className="absolute top-4 left-4 max-w-xs hidden lg:block">
-                <div className="bg-black/20 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                  <h3 className="text-white font-bold text-lg mb-2 drop-shadow-lg">
-                    {belief.title}
-                  </h3>
-                  <p className="text-white/90 text-sm font-light italic mb-2 leading-relaxed" 
-                     style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
-                    {belief.verse}
-                  </p>
-                  <p className="text-white/80 text-xs font-medium"
-                     style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
-                    {belief.reference}
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {index === 1 && (
-              <div className="absolute top-4 right-4 max-w-xs hidden lg:block">
-                <div className="bg-black/20 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                  <h3 className="text-white font-bold text-lg mb-2 drop-shadow-lg">
-                    {belief.title}
-                  </h3>
-                  <p className="text-white/90 text-sm font-light italic mb-2 leading-relaxed" 
-                     style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
-                    {belief.verse}
-                  </p>
-                  <p className="text-white/80 text-xs font-medium"
-                     style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
-                    {belief.reference}
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {index === 2 && (
-              <div className="absolute bottom-4 left-4 max-w-xs hidden lg:block">
-                <div className="bg-black/20 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                  <h3 className="text-gray-900 font-bold text-lg mb-2 drop-shadow-lg">
-                    {belief.title}
-                  </h3>
-                  <p className="text-gray-800 text-sm font-light italic mb-3 leading-relaxed" 
-                     style={{ textShadow: '1px 1px 2px rgba(255,255,255,0.8)' }}>
-                    {belief.verse}
-                  </p>
-                  <p className="text-gray-700 text-xs font-medium"
-                     style={{ textShadow: '1px 1px 2px rgba(255,255,255,0.8)' }}>
-                    {belief.reference}
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {index === 3 && (
-              <div className="absolute bottom-4 right-4 max-w-xs hidden lg:block">
-                <div className="bg-black/20 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                  <h3 className="text-white font-bold text-lg mb-2 drop-shadow-lg">
-                    {belief.title}
-                  </h3>
-                  <p className="text-white/90 text-sm font-light italic mb-2 leading-relaxed" 
-                     style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
-                    {belief.verse}
-                  </p>
-                  <p className="text-white/80 text-xs font-medium"
-                     style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
-                    {belief.reference}
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {/* Decorative element */}
-            <div className="absolute bottom-2 right-2 w-6 h-6 border-2 border-white/20 rounded-full animate-ping"></div>
-          </div>
-        ))}
-      </div>
+    <div
+      className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden bg-fixed"
+      style={{
+        backgroundImage: `url(${zionChoir})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      }}
+    >
+      {/* Pillars removed */}
       
-      {/* Subtle overlay for better contrast */}
-      <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-transparent to-black/20"></div>
+      {/* Darker overlay for stronger background shadow */}
+      <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-black/30 to-black/60"></div>
       
       {/* Floating white particles */}
       <div className="absolute inset-0 overflow-hidden">
+        {/* Existing subtle particles */}
         <div className="absolute top-1/4 left-1/4 w-1 h-1 bg-white/40 rounded-full animate-float" style={{ animationDelay: '0s', animationDuration: '4s' }}></div>
         <div className="absolute top-1/3 right-1/3 w-1.5 h-1.5 bg-white/30 rounded-full animate-float" style={{ animationDelay: '1s', animationDuration: '5s' }}></div>
         <div className="absolute bottom-1/4 left-1/3 w-2 h-2 bg-white/20 rounded-full animate-float" style={{ animationDelay: '2s', animationDuration: '6s' }}></div>
         <div className="absolute top-1/2 right-1/4 w-1 h-1 bg-white/35 rounded-full animate-float" style={{ animationDelay: '3s', animationDuration: '4.5s' }}></div>
+
+        {/* Falling crosses layer - sparse and soft so it doesn't distract */}
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div
+            key={`cross-${i}`}
+            className="cross-fall"
+            style={{
+              left: `${(i * 8) % 100}%`,
+              animationDuration: `${6 + (i % 5)}s`,
+              animationDelay: `${(i % 7) * 0.7}s`,
+              opacity: 0.6,
+            }}
+          />
+        ))}
       </div>
       
       {/* Login Form */}

@@ -131,21 +131,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
 
   return (
     <div className={`bg-primary text-white h-screen transition-all duration-300 ${
-      isCollapsed ? 'w-16' : 'w-64'
-    } flex-shrink-0`}>
+      isCollapsed ? 'w-16' : 'w-72'
+    } flex-shrink-0 flex flex-col`}>
       <div className="p-4">
-        <div className="flex items-center space-x-3">
-          <img src={logo} alt="SDA Mt. Zion Logo" className="w-16 h-16 object-contain" />
+        <div className="flex flex-col items-center text-center">
+          <img src={logo} alt="SDA Mt. Zion Logo" className="w-12 h-12 object-contain mb-2" />
           {!isCollapsed && (
-            <div>
-              <h1 className="text-lg font-bold">Seventh-Day Adventist Church, Mt. Zion - Kigoma</h1>
-              <p className="text-xs text-blue-200">Church Management</p>
+            <div className="max-w-full">
+              <h1 className="text-base font-bold leading-tight break-words">
+                Seventh-Day Adventist Church, Mt. Zion - Kigoma
+              </h1>
+              <p className="text-[10px] text-blue-200 mt-0.5">Church Management</p>
             </div>
           )}
         </div>
       </div>
 
-      <nav className="mt-8">
+      <nav className="mt-4 flex-1 overflow-y-auto">
         {menuItems.map((item) => (
           <div key={item.path}>
             {item.hasSubmenu && item.label === 'Members' ? (
@@ -441,7 +443,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       </nav>
 
       {!isCollapsed && (
-        <div className="absolute bottom-4 left-4 right-4">
+        <div className="mt-auto p-4">
           <div className="bg-blue-800 rounded-lg p-3">
             <p className="text-xs text-blue-200">
               {isAdmin ? 'Admin Panel' : 'Member Portal'}

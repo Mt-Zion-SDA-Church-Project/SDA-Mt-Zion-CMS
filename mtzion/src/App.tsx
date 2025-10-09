@@ -28,6 +28,7 @@ import Offering from './pages/Admin/Givings/Offering';
 import AddOffering from './pages/Admin/Givings/AddOffering';
 import ManageSystemUsers from './pages/Admin/SystemUsers/ManageSystemUsers';
 import AddSystemUser from './pages/Admin/SystemUsers/AddSystemUser';
+import ManagePrivileges from './pages/Admin/Privileges/ManagePrivileges';
 // import ActivityLog from './pages/Admin/Logs/ActivityLog';
 // import UserLog from './pages/Admin/Logs/UserLog';
 import AddEvent from './pages/Admin/Events/AddEvent';
@@ -219,6 +220,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute requiredRole="admin">
               <AddSystemUser />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin/privileges" 
+          element={
+            <ProtectedRoute requiredRole="super_admin">
+              <ManagePrivileges />
             </ProtectedRoute>
           } 
         />

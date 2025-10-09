@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { 
   Users, 
@@ -18,9 +18,12 @@ import {
   UserPlus,
   Cake,
   QrCode,
-  Images
+  Images,
+  Shield
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
+import { UserPrivilege } from '../../types';
 import logo from '../../assets/sda-logo.png';
 
 interface SidebarProps {
@@ -28,7 +31,11 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
-  const { isAdmin, isMember } = useAuth();
+  const { isAdmin, isMember, user } = useAuth();
+  
+  console.log('=== SIDEBAR COMPONENT RENDER ===');
+  console.log('User from useAuth:', user);
+  console.log('isAdmin:', isAdmin, 'isMember:', isMember);
   const [isMembersExpanded, setIsMembersExpanded] = useState(false);
   const [isTeensExpanded, setIsTeensExpanded] = useState(false);
   const [isVisitorsExpanded, setIsVisitorsExpanded] = useState(false);
@@ -36,13 +43,97 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
   const [isSystemExpanded, setIsSystemExpanded] = useState(false);
   const [isLogsExpanded, setIsLogsExpanded] = useState(false);
   const [isEventsExpanded, setIsEventsExpanded] = useState(false);
+  const [userPrivileges, setUserPrivileges] = useState<UserPrivilege[]>([]);
+
+  const loadUserPrivileges = async () => {
+    console.log('=== LOAD USER PRIVILEGES START ===');
+    console.log('User object:', user);
+    
+    try {
+      const userType = user?.role === 'admin' ? 'admin' : 'member';
+      console.log('Loading privileges for user:', user?.id, 'type:', userType);
+      
+      // Get the actual database ID based on user type
+      let actualUserId = user?.id;
+      
+      if (userType === 'admin') {
+        console.log('Looking up admin in system_users table...');
+        // For admins, get the system_users.id
+        const { data: systemUser, error: systemError } = await supabase
+          .from('system_users')
+          .select('id')
+          .eq('user_id', user?.id)
+          .single();
+        console.log('System user lookup result:', { systemUser, systemError });
+        actualUserId = systemUser?.id;
+      } else {
+        console.log('Looking up member in members table...');
+        // For members, get the members.id
+        const { data: member, error: memberError } = await supabase
+          .from('members')
+          .select('id')
+          .eq('user_id', user?.id)
+          .single();
+        console.log('Member lookup result:', { member, memberError });
+        actualUserId = member?.id;
+      }
+      
+      console.log('Actual user ID for privileges:', actualUserId);
+      
+      if (actualUserId) {
+        console.log('Querying user_privileges table...');
+        const { data, error } = await supabase
+          .from('user_privileges')
+          .select('*')
+          .eq('user_id', actualUserId)
+          .eq('user_type', userType);
+
+        console.log('Privileges loaded:', data, 'error:', error);
+        if (!error && data) {
+          setUserPrivileges(data);
+        }
+      } else {
+        console.log('No actualUserId found, cannot load privileges');
+      }
+    } catch (error) {
+      console.error('Error loading user privileges:', error);
+    }
+    console.log('=== LOAD USER PRIVILEGES END ===');
+  };
+
+  // Load user privileges
+  useEffect(() => {
+    console.log('=== SIDEBAR USEEFFECT ===');
+    console.log('User in useEffect:', user);
+    console.log('User ID:', user?.id);
+    console.log('User role:', user?.role);
+    
+    if (user?.id) {
+      console.log('User ID exists, calling loadUserPrivileges...');
+      loadUserPrivileges();
+    } else {
+      console.log('No user ID, not loading privileges');
+    }
+  }, [user?.id]);
+
+  const hasPrivilege = (tabName: string): boolean => {
+    if (!user?.id) return true; // Default to allowed if no user
+    const privilege = userPrivileges.find(p => p.tab_name === tabName);
+    console.log(`Checking privilege for ${tabName}:`, privilege);
+    console.log('All privileges:', userPrivileges);
+    console.log('User ID:', user?.id);
+    const result = privilege ? privilege.is_allowed : true; // Default to allowed
+    console.log(`Result for ${tabName}:`, result);
+    return result;
+  };
 
   const adminMenuItems = [
-    { icon: Home, label: 'Dashboard', path: '/admin' },
+    { icon: Home, label: 'Dashboard', path: '/admin', tabName: 'dashboard' },
     { 
       icon: Users, 
       label: 'Members', 
       path: '/admin/members',
+      tabName: 'members',
       hasSubmenu: true,
       submenu: [
         { icon: Users, label: 'Member Details', path: '/admin/members/details' },
@@ -66,6 +157,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       icon: UserCheck, 
       label: 'Visitors', 
       path: '/admin/visitors',
+      tabName: 'visitors',
       hasSubmenu: true,
       submenu: [
         { icon: Users, label: 'Visitor Details', path: '/admin/visitors/details' },
@@ -76,6 +168,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       icon: DollarSign, 
       label: 'Offertory', 
       path: '/admin/givings',
+      tabName: 'offertory',
       hasSubmenu: true,
       submenu: [
         { icon: Gift, label: 'Offertory Paid', path: '/admin/givings/tithes' },
@@ -86,13 +179,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       icon: Settings, 
       label: 'System Users', 
       path: '/admin/system-users',
+      tabName: 'system_users',
       hasSubmenu: true,
       submenu: [
         { icon: Users, label: 'Manage System Users', path: '/admin/system-users/manage' },
         { icon: UserPlus, label: 'Add System User', path: '/admin/system-users/add' },
       ]
     },
-    { 
+    ...(user?.role === 'super_admin' ? [{
       icon: Activity, 
       label: 'System Logs', 
       path: '/admin/logs',
@@ -101,33 +195,44 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         { icon: Activity, label: 'Activity Log', path: '/admin/logs/activity' },
         { icon: Activity, label: 'User Log', path: '/admin/logs/user' },
       ]
-    },
+    }] : []),
     { 
       icon: Calendar, 
       label: 'Events', 
       path: '/admin/events',
+      tabName: 'events',
       hasSubmenu: true,
       submenu: [
         { icon: UserPlus, label: 'Add Event', path: '/admin/events/add' },
         { icon: Clock, label: 'Upcoming Events', path: '/admin/events/upcoming' },
       ]
     },
-    { icon: Images, label: 'Gallery', path: '/admin/gallery' },
-    { icon: Users, label: 'Attendance', path: '/admin/attendance' },
-    { icon: FileText, label: 'Reports', path: '/admin/reports' },
+    { icon: Images, label: 'Gallery', path: '/admin/gallery', tabName: 'gallery' },
+    { icon: Users, label: 'Attendance', path: '/admin/attendance', tabName: 'attendance' },
+    { icon: FileText, label: 'Reports', path: '/admin/reports', tabName: 'reports' },
+    ...(user?.role === 'super_admin' ? [{
+      icon: Shield, 
+      label: 'Privileges', 
+      path: '/admin/privileges',
+      tabName: 'privileges'
+    }] : []),
   ];
 
   const memberMenuItems = [
-    { icon: Home, label: 'Dashboard', path: '/member' },
-    { icon: QrCode, label: 'QR Check-in', path: '/member/qr-checkin' },
-    { icon: Calendar, label: 'Events', path: '/member/events' },
-    { icon: Heart, label: 'Birthdays', path: '/member/birthdays' },
-    { icon: Settings, label: 'SabbathSchool Resources', path: '/member/resources' },
-    { icon: Heart, label: 'Give Offertory', path: '/member/offertory' },
-    { icon: Images, label: 'Gallery', path: '/member/gallery' },
+    { icon: Home, label: 'Dashboard', path: '/member', tabName: 'dashboard' },
+    { icon: QrCode, label: 'QR Check-in', path: '/member/qr-checkin', tabName: 'qr_checkin' },
+    { icon: Calendar, label: 'Events', path: '/member/events', tabName: 'events' },
+    { icon: Heart, label: 'Birthdays', path: '/member/birthdays', tabName: 'birthdays' },
+    { icon: Settings, label: 'SabbathSchool Resources', path: '/member/resources', tabName: 'resources' },
+    { icon: Heart, label: 'Give Offertory', path: '/member/offertory', tabName: 'offertory' },
+    { icon: Images, label: 'Gallery', path: '/member/gallery', tabName: 'gallery' },
   ];
 
-  const menuItems = isAdmin ? adminMenuItems : memberMenuItems;
+  // Filter menu items based on user privileges
+  const filteredMenuItems = (isAdmin ? adminMenuItems : memberMenuItems).filter(item => {
+    if (!item.tabName) return true; // Always show items without tabName
+    return hasPrivilege(item.tabName);
+  });
 
   return (
     <div className={`bg-primary text-white h-screen transition-all duration-300 ${
@@ -148,7 +253,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       </div>
 
       <nav className="mt-4 flex-1 overflow-y-auto">
-        {menuItems.map((item) => (
+        {filteredMenuItems.map((item) => (
           <div key={item.path}>
             {item.hasSubmenu && item.label === 'Members' ? (
               <div>

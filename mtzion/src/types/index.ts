@@ -190,3 +190,20 @@ export interface SystemLog {
   created_at: string;
   user?: SystemUser;
 }
+
+export interface UserPrivilege {
+  id: string;
+  user_id: string;
+  user_type: 'admin' | 'member';
+  tab_name: string;
+  is_allowed: boolean;
+  created_at: string;
+  updated_at: string;
+  user?: SystemUser | Member;
+}
+
+export interface PrivilegeTab {
+  name: string;
+  label: string;
+  userType: 'admin' | 'member';
+}

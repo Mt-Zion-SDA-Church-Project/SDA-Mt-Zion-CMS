@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Menu, Home, CreditCard, Calendar, BookOpen, Heart, QrCode, Bell, Images, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
+import { UserPrivilege } from '../../types';
 import logo from '../../assets/sda-logo.png';
 
 type MenuItem = {
@@ -28,9 +30,11 @@ interface MemberMobileNavProps {
 const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Portal' }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const [open, setOpen] = React.useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [userPrivileges, setUserPrivileges] = useState<UserPrivilege[]>([]);
 
   useEffect(() => {
     const loadNotifications = async () => {
@@ -49,6 +53,54 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  // Load user privileges
+  useEffect(() => {
+    if (user?.id) {
+      loadUserPrivileges();
+    }
+  }, [user?.id]);
+
+  const loadUserPrivileges = async () => {
+    try {
+      console.log('=== MOBILE NAV LOAD PRIVILEGES ===');
+      console.log('User:', user);
+      
+      // Get the member's database ID
+      const { data: member, error: memberError } = await supabase
+        .from('members')
+        .select('id')
+        .eq('user_id', user?.id)
+        .single();
+      
+      console.log('Member lookup:', { member, memberError });
+      
+      if (member?.id) {
+        console.log('Using member ID for privileges:', member.id);
+        const { data, error } = await supabase
+          .from('user_privileges')
+          .select('*')
+          .eq('user_id', member.id)
+          .eq('user_type', 'member');
+
+        console.log('Mobile nav privileges loaded:', data, 'error:', error);
+        if (!error && data) {
+          setUserPrivileges(data);
+        }
+      } else {
+        console.log('No member ID found, cannot load privileges');
+      }
+    } catch (error) {
+      console.error('Error loading mobile nav privileges:', error);
+    }
+  };
+
+  const hasPrivilege = (tabName: string): boolean => {
+    if (!user?.id) return true; // Default to allowed if no user
+    const privilege = userPrivileges.find(p => p.tab_name === tabName);
+    console.log(`Mobile nav checking privilege for ${tabName}:`, privilege);
+    return privilege ? privilege.is_allowed : true; // Default to allowed
+  };
 
   const onNavigate = (href: string) => {
     setOpen(false);
@@ -178,7 +230,7 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
 
       {open && (
         <div className="border-t bg-white shadow-lg relative z-50">
-          {items.map((m) => (
+          {items.filter(item => hasPrivilege(item.id)).map((m) => (
             <button
               key={m.id}
               onClick={() => onNavigate(m.href)}

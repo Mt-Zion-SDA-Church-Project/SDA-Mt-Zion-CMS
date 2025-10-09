@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Database query timeout')), 10000)       
+      setTimeout(() => reject(new Error('Database query timeout')), 30000)       
     );
 
     try {
@@ -73,6 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('system_users')
         .select('*')
         .eq('user_id', userId)
+        .eq('is_active', true)
         .single();
 
       const { data: systemUser, error: systemError } = await Promise.race([
@@ -118,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .from('members')
           .select('*')
           .eq('user_id', userId)
+          .eq('status', 'active')
           .single();
 
         const { data: member, error: memberError } = await Promise.race([

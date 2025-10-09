@@ -147,6 +147,30 @@ const AdminDashboard: React.FC = () => {
         timestamp: activity.created_at
       })) || [];
 
+      // If there are no recent activities in the database, generate helpful insights
+      const fallbackActivities = formattedActivities.length === 0
+        ? [
+            {
+              action: `Upcoming events this week: ${(eventsListResult.data || []).length}`,
+              user: 'System',
+              time: 'Just now',
+              timestamp: new Date().toISOString()
+            },
+            {
+              action: `Monthly offertory so far: ${formatCurrency(totalOfferings)}`,
+              user: 'System',
+              time: 'Just now',
+              timestamp: new Date().toISOString()
+            },
+            {
+              action: `New visitors this month: ${visitorsResult.count || 0}`,
+              user: 'System',
+              time: 'Just now',
+              timestamp: new Date().toISOString()
+            }
+          ]
+        : formattedActivities;
+
       // Format upcoming birthdays
       const formattedBirthdays = birthdaysResult.data?.map(member => {
         const birthDate = new Date(member.date_of_birth);
@@ -191,7 +215,7 @@ const AdminDashboard: React.FC = () => {
         upcomingEvents: eventsResult.count || 0,
         monthlyTithes: totalTithes,
         monthlyOfferings: totalOfferings,
-        recentActivities: formattedActivities,
+        recentActivities: fallbackActivities,
         upcomingBirthdays: formattedBirthdays.slice(0, 5),
         upcomingEventsList: formattedEventsList
       });

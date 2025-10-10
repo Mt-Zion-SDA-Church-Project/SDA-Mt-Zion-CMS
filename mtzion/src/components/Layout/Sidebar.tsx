@@ -118,11 +118,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
 
   const hasPrivilege = (tabName: string): boolean => {
     if (!user?.id) return true; // Default to allowed if no user
+    
+    // Check if user has any privilege records at all
+    const hasAnyPrivileges = userPrivileges.length > 0;
+    
+    if (!hasAnyPrivileges) {
+      // If no privilege records exist, default to allowed
+      return true;
+    }
+    
+    // If privilege records exist, check the specific tab
     const privilege = userPrivileges.find(p => p.tab_name === tabName);
     console.log(`Checking privilege for ${tabName}:`, privilege);
     console.log('All privileges:', userPrivileges);
     console.log('User ID:', user?.id);
-    const result = privilege ? privilege.is_allowed : true; // Default to allowed
+    
+    // If specific privilege exists, use it; otherwise default to allowed
+    const result = privilege ? privilege.is_allowed : true;
     console.log(`Result for ${tabName}:`, result);
     return result;
   };

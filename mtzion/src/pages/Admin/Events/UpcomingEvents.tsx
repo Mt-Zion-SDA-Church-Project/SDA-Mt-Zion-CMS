@@ -47,18 +47,19 @@ const UpcomingEvents: React.FC = () => {
 
   return (
     <div className="p-4">
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+      {/* Make this block printable */}
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden print-area">
         {/* Header */}
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
           <span className="text-sm font-semibold">Upcoming Events</span>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 hide-on-print">
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-white text-xs">{events.length}</span>
             <button onClick={handlePrint} className="inline-flex items-center gap-2 px-3 py-2 bg-[#1f3b73] text-white rounded hover:opacity-90 text-sm">Print List</button>
           </div>
         </div>
 
         {/* Controls */}
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-4 py-3 flex items-center gap-3 hide-on-print">
           <button 
             onClick={load} 
             disabled={loading}
@@ -83,7 +84,7 @@ const UpcomingEvents: React.FC = () => {
 
         {/* Table */}
         <div className="px-4 pb-4 overflow-x-auto">
-          <table className="min-w-full text-sm border border-gray-200">
+          <table className="min-w-full text-sm border border-gray-200 print-table">
             <thead className="bg-gray-50">
               <tr>
                 <th className="text-left p-2 border-b">TITLE</th>

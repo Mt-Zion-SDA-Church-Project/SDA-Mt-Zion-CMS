@@ -1,8 +1,15 @@
 import React, { useState } from 'react';
+import { supabase } from '../../../lib/supabase';
 
 const AddOffering: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedSubcategory, setSelectedSubcategory] = useState('');
+  const [amount, setAmount] = useState<string>('');
+  const [txnCode, setTxnCode] = useState<string>('');
+  const [mobile, setMobile] = useState<string>('');
+  const [saving, setSaving] = useState<boolean>(false);
+  const [saveMsg, setSaveMsg] = useState<string>('');
+  const [saveErr, setSaveErr] = useState<string>('');
 
   const offeringCategories = {
     'Trust Fund': [
@@ -40,10 +47,10 @@ const AddOffering: React.FC = () => {
           <div className="px-4 py-3 border-b bg-gray-50">
             <span className="text-sm font-semibold">Enter Giving</span>
           </div>
-          <form className="p-6 space-y-4">
+          <form className="p-6 space-y-4" onSubmit={(e) => e.preventDefault()}>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Category</label>
-              <select 
+                <select 
                 className="w-full border rounded px-3 py-2"
                 value={selectedCategory}
                 onChange={(e) => {
@@ -74,18 +81,69 @@ const AddOffering: React.FC = () => {
             )}
             <div>
               <label className="block text-sm text-gray-600 mb-1">Amount</label>
-              <input className="w-full border rounded px-3 py-2" />
+              <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ''))} className="w-full border rounded px-3 py-2" inputMode="numeric" />
             </div>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Transaction Code</label>
-              <input className="w-full border rounded px-3 py-2" />
+              <input value={txnCode} onChange={(e) => setTxnCode(e.target.value)} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Mobile Number</label>
-              <input className="w-full border rounded px-3 py-2" />
+              <input value={mobile} onChange={(e) => setMobile(e.target.value)} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
-              <button type="button" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+              {(saveErr || saveMsg) && (
+                <div className="text-sm mb-2">
+                  {saveErr && <span className="text-red-600">{saveErr}</span>}
+                  {saveMsg && <span className="text-green-600">{saveMsg}</span>}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  setSaving(true);
+                  setSaveErr('');
+                  setSaveMsg('');
+                  try {
+                    const amt = Math.max(0, Math.floor(Number(amount || 0)));
+                    if (!selectedCategory || !selectedSubcategory) throw new Error('Select category and subcategory');
+                    if (amt <= 0) throw new Error('Enter a valid amount');
+
+                    const categories = [
+                      { key: 'admin_manual', label: `${selectedCategory} - ${selectedSubcategory}`, amount: amt },
+                    ];
+
+                    const { error } = await supabase
+                      .from('offertory_payments')
+                      .insert({
+                        member_id: null,
+                        amount_ugx: amt,
+                        currency: 'UGX',
+                        method: 'cash',
+                        categories,
+                        provider_ref: txnCode || null,
+                        notes: mobile ? `Mobile: ${mobile}` : null,
+                      });
+                    if (error) throw error;
+
+                    setSaveMsg('Saved');
+                    // Reset form
+                    setSelectedCategory('');
+                    setSelectedSubcategory('');
+                    setAmount('');
+                    setTxnCode('');
+                    setMobile('');
+                  } catch (e: any) {
+                    setSaveErr(e?.message || 'Failed to save');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
             </div>
           </form>
         </div>

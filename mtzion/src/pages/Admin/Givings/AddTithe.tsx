@@ -87,30 +87,52 @@ const AddTithe: React.FC = () => {
     try {
       if (!serviceDate) throw new Error('Please select the service date');
 
-      // Map known categories to fixed columns, sum custom into other_offerings
-      const base: Record<KnownKey, number> = {
-        tithe_10_percent: 0,
+      // Map English categories to DB columns in cash_offering_accounts
+      const base: Record<string, number> = {
+        trust_fund: 0,
+        ekitundu_10: 0,
         camp_meeting_offering: 0,
-        '13th_sabbath': 0,
+        ssabiti_13th: 0,
         prime_radio: 0,
-        kireka_adventist_church: 0,
-        sabbath_school: 0,
-        thanks_giving: 0,
-        devine: 0,
-        local_church_building: 0,
-        district_project_fund: 0,
-        lunch: 0,
+        hope_channel_tv_uganda: 0,
+        eddwaliro_kireka: 0,
+        ebf_development_fund: 0,
+        ebirabo_ebyawamu: 0,
+        essomero_lya_ssabbiti: 0,
+        okwebaza: 0,
+        okusinza: 0,
+        ebirabo_ebirala: 0,
+        okuzimba: 0,
+        ekyemisana: 0,
         social_and_welfare: 0,
-        evangelism: 0,
-        nbf_development_fund: 0,
+        camp_meeting_expense: 0,
+        enjiri: 0,
+      };
+
+      // Mapping from English categories to DB columns
+      const categoryMapping: Record<KnownKey, string> = {
+        tithe_10_percent: 'ekitundu_10',
+        camp_meeting_offering: 'camp_meeting_offering',
+        '13th_sabbath': 'ssabiti_13th',
+        prime_radio: 'prime_radio',
+        kireka_adventist_church: 'eddwaliro_kireka',
+        sabbath_school: 'essomero_lya_ssabbiti',
+        thanks_giving: 'okwebaza',
+        devine: 'okusinza',
+        local_church_building: 'okuzimba',
+        district_project_fund: 'ebf_development_fund',
+        lunch: 'ekyemisana',
+        social_and_welfare: 'social_and_welfare',
+        evangelism: 'enjiri',
+        nbf_development_fund: 'ebirabo_ebirala',
       };
 
       for (const r of rows) {
         const amt = Math.max(0, Math.floor(Number(r.amount || 0)));
-        if (r.key) {
-          base[r.key] += amt;
+        if (r.key && categoryMapping[r.key]) {
+          base[categoryMapping[r.key]] += amt;
         } else {
-          base.nbf_development_fund += amt; // aggregate unknown/custom
+          base.ebirabo_ebirala += amt; // aggregate unknown/custom
         }
       }
 

@@ -23,19 +23,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     console.log('AuthProvider: Starting auth initialization');
     
-    const clearSessionOnStart = () => {
-      console.log('Clearing any existing session on app start');
+    // Check for existing session first
+    const initializeAuth = async () => {
       try {
-        supabase.auth.signOut();
-        localStorage.removeItem('sb-' + process.env.REACT_APP_SUPABASE_PROJECT_ID + '-auth-token');
-        sessionStorage.clear();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('Initial session check:', { session, error });
+        
+        if (session?.user) {
+          console.log('Found existing session, fetching user profile...');
+          await fetchUserProfile(session.user.id);
+        } else {
+          console.log('No existing session found');
+          setLoading(false);
+        }
       } catch (error) {
-        console.error('Error clearing session:', error);
+        console.error('Error checking initial session:', error);
+        setLoading(false);
       }
     };
 
-    // Clear session on app load for testing
-    clearSessionOnStart();
+    // Initialize auth state
+    initializeAuth();
     
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -176,16 +184,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     console.log('Starting sign out process...');
     try {
+      // Sign out from Supabase first
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Sign out error:', error);
-        throw error;
+        // Continue with local cleanup even if Supabase signOut fails
+      }
+      
+      // Clear all local storage
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (storageError) {
+        console.error('Error clearing storage:', storageError);
       }
       
       console.log('Sign out successful');
+      
+      // Clear local state - this will trigger the auth state change listener
       setUser(null);
     } catch (error) {
       console.error('Sign out failed:', error);
+      // Still try to clear local state
+      setUser(null);
     }
   };
 

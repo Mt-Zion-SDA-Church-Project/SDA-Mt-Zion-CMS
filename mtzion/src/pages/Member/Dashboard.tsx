@@ -193,6 +193,7 @@ const MemberDashboard: React.FC = () => {
 
       const formattedBirthdays = birthdaysResult.status === 'fulfilled'
         ? (() => {
+            console.log('Member Dashboard - Birthday data:', birthdaysResult.value.data);
             const today = new Date();
             const all = (birthdaysResult.value.data || []).map((member: any) => {
               const birthDate = new Date(member.date_of_birth);
@@ -200,6 +201,7 @@ const MemberDashboard: React.FC = () => {
               const nextYear = new Date(today.getFullYear() + 1, birthDate.getMonth(), birthDate.getDate());
               const upcomingDate = thisYear > today ? thisYear : nextYear;
               const daysUntil = Math.ceil((upcomingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+              console.log(`Member: ${member.first_name} ${member.last_name}, Birth date: ${member.date_of_birth}, Days until: ${daysUntil}`);
               return {
                 id: member.id,
                 name: `${member.first_name} ${member.last_name}`,
@@ -207,6 +209,7 @@ const MemberDashboard: React.FC = () => {
                 daysUntil
               };
             });
+            console.log('All birthdays with days until:', all);
             // Next 7 days only, sorted by soonest
             const next7 = all
               .filter(b => b.daysUntil >= 0 && b.daysUntil <= 7)
@@ -217,6 +220,7 @@ const MemberDashboard: React.FC = () => {
                 name: b.name,
                 date: b.upcomingDate.toLocaleDateString()
               }));
+            console.log('Filtered birthdays (next 7 days):', next7);
             return next7;
           })()
         : [];

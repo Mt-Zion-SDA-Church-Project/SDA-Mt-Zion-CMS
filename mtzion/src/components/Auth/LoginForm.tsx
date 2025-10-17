@@ -177,7 +177,7 @@ const LoginForm: React.FC = () => {
 
         <div className="text-center mt-6 relative z-10">
           <p className="text-white/90 text-sm drop-shadow-lg backdrop-blur-sm">
-            © 2024 Seventh-Day Adventist Church, Mt. Zion - Kigoma. All rights reserved.
+            © 2025 Seventh-Day Adventist Church, Mt. Zion - Kigoma. All rights reserved.
           </p>
         </div>
       </div>

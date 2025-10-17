@@ -181,12 +181,19 @@ const AdminDashboard: React.FC = () => {
         const upcomingDate = thisYear > today ? thisYear : nextYear;
         const daysUntil = Math.ceil((upcomingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         
+        console.log(`Admin - Member: ${member.first_name} ${member.last_name}, Birth date: ${member.date_of_birth}, Days until: ${daysUntil}`);
+        
         return {
           name: `${member.first_name} ${member.last_name}`,
           date: `${birthDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${daysUntil} days)`,
-          avatar: `${member.first_name[0]}${member.last_name[0]}`
+          avatar: `${member.first_name[0]}${member.last_name[0]}`,
+          daysUntil
         };
-      }).filter(birthday => birthday.date.includes('days') && parseInt(birthday.date.split('(')[1]) <= 30) || [];
+      }).filter(birthday => {
+        const isValid = birthday.daysUntil >= 0 && birthday.daysUntil <= 30;
+        console.log(`Admin - Birthday filter: ${birthday.name}, daysUntil: ${birthday.daysUntil}, valid: ${isValid}`);
+        return isValid;
+      }) || [];
 
       // Format upcoming events list
       const formattedEventsList = eventsListResult.data?.map(event => {

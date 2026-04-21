@@ -1,226 +1,265 @@
-import React, { useState, useEffect } from 'react';
+// src/components/QRCodeGenerator.tsx
+import React, { useState } from 'react';
 import QRCode from 'qrcode';
-import { QrCode, Download, Copy, CheckCircle } from 'lucide-react';
+import { Download, Printer, Calendar, Clock, MapPin, Copy, Check } from 'lucide-react';
 
 interface QRCodeGeneratorProps {
   eventId: string;
   eventTitle: string;
   eventDate: string;
-  onQRGenerated?: (qrCode: string) => void;
+  location?: string;
+  onQRGenerated?: (qrCodeUrl: string) => void;
 }
 
 const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
   eventId,
   eventTitle,
   eventDate,
+  location,
   onQRGenerated
 }) => {
-  const [qrCodeDataURL, setQrCodeDataURL] = useState<string>('');
-  const [qrCodeText, setQrCodeText] = useState<string>('');
-  const [loading, setLoading] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [qrSize, setQrSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    generateQRCode();
-  }, [eventId, eventTitle, eventDate]);
-
   const generateQRCode = async () => {
-    setLoading(true);
+    setGenerating(true);
     try {
-      // Create QR code data with event information
-      const qrData = {
-        type: 'event_checkin',
+      // Create signed payload for the event
+      const payload = JSON.stringify({
         eventId: eventId,
-        eventTitle: eventTitle,
-        eventDate: eventDate,
-        timestamp: new Date().toISOString(),
-        // Include member ID for individual member QR codes
-        // For events, this could be a general check-in code
-        checkInCode: `EVENT_${eventId}_${Date.now()}`
-      };
-
-      const qrString = JSON.stringify(qrData);
-      setQrCodeText(qrString);
-
-      // Generate QR code image
-      const dataURL = await QRCode.toDataURL(qrString, {
-        width: 300,
+        type: 'event_checkin',
+        timestamp: Date.now(),
+        expiresAt: Date.now() + (4 * 60 * 60 * 1000) // 4 hours validity
+      });
+      
+      // Create URL that members will scan
+      const checkinUrl = `${window.location.origin}/member/qr-checkin?data=${btoa(payload)}`;
+      
+      const qrDataUrl = await QRCode.toDataURL(checkinUrl, {
+        errorCorrectionLevel: 'H',
+        width: qrSize === 'small' ? 200 : qrSize === 'medium' ? 300 : 500,
         margin: 2,
         color: {
           dark: '#000000',
           light: '#FFFFFF'
-        },
-        errorCorrectionLevel: 'M'
+        }
       });
-
-      setQrCodeDataURL(dataURL);
-
+      
+      setQrCodeUrl(qrDataUrl);
       if (onQRGenerated) {
-        onQRGenerated(qrString);
+        onQRGenerated(qrDataUrl);
       }
     } catch (error) {
-      console.error('Error generating QR code:', error);
+      console.error('Failed to generate QR code:', error);
+      alert('Failed to generate QR code. Please try again.');
     } finally {
-      setLoading(false);
+      setGenerating(false);
     }
   };
 
   const downloadQRCode = () => {
-    if (!qrCodeDataURL) return;
-
+    if (!qrCodeUrl) return;
     const link = document.createElement('a');
-    link.download = `${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_qr_code.png`;
-    link.href = qrCodeDataURL;
+    link.download = `qr_${eventTitle.replace(/\s/g, '_')}_${eventId}.png`;
+    link.href = qrCodeUrl;
     link.click();
   };
 
-  const copyQRData = async () => {
-    try {
-      await navigator.clipboard.writeText(qrCodeText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy QR data:', error);
-    }
+  const copyCheckinUrl = () => {
+    const payload = JSON.stringify({
+      eventId: eventId,
+      type: 'event_checkin',
+      timestamp: Date.now(),
+      expiresAt: Date.now() + (4 * 60 * 60 * 1000)
+    });
+    const checkinUrl = `${window.location.origin}/member/qr-checkin?data=${btoa(payload)}`;
+    navigator.clipboard.writeText(checkinUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const generateMemberQRCode = async (memberId: string) => {
-    setLoading(true);
-    try {
-      const memberQRData = {
-        type: 'member_checkin',
-        memberId: memberId,
-        eventId: eventId,
-        eventTitle: eventTitle,
-        eventDate: eventDate,
-        timestamp: new Date().toISOString(),
-        checkInCode: `MEMBER_${memberId}_EVENT_${eventId}`
-      };
+  const printQRCode = () => {
+    if (!qrCodeUrl) return;
+    const printWindow = window.open('', '_blank');
+    printWindow?.document.write(`
+      <html>
+        <head>
+          <title>Print QR Code - ${eventTitle}</title>
+          <style>
+            body {
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              min-height: 100vh;
+              font-family: Arial, sans-serif;
+              margin: 0;
+              padding: 20px;
+            }
+            .container {
+              text-align: center;
+              padding: 20px;
+              border: 2px dashed #ccc;
+              border-radius: 10px;
+              max-width: 400px;
+            }
+            img {
+              max-width: 300px;
+              height: auto;
+            }
+            .event-details {
+              margin-top: 20px;
+              text-align: left;
+              font-size: 14px;
+            }
+            .instructions {
+              margin-top: 20px;
+              font-size: 12px;
+              color: #666;
+              border-top: 1px solid #eee;
+              padding-top: 10px;
+            }
+            @media print {
+              .no-print { display: none; }
+              body { margin: 0; padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h2>${eventTitle}</h2>
+            <img src="${qrCodeUrl}" alt="QR Code" />
+            <div class="event-details">
+              <p><strong>Date:</strong> ${new Date(eventDate).toLocaleDateString()}</p>
+              <p><strong>Time:</strong> ${new Date(eventDate).toLocaleTimeString()}</p>
+              ${location ? `<p><strong>Location:</strong> ${location}</p>` : ''}
+            </div>
+            <div class="instructions">
+              <strong>Instructions for Members:</strong><br/>
+              1. Open your phone camera<br/>
+              2. Scan this QR code<br/>
+              3. You will be automatically checked in<br/>
+              4. Make sure you're logged into your account
+            </div>
+            <div class="no-print" style="margin-top: 20px;">
+              <button onclick="window.print()">Print</button>
+              <button onclick="window.close()">Close</button>
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow?.document.close();
+  };
 
-      const qrString = JSON.stringify(memberQRData);
-      setQrCodeText(qrString);
-
-      const dataURL = await QRCode.toDataURL(qrString, {
-        width: 300,
-        margin: 2,
-        color: {
-          dark: '#000000',
-          light: '#FFFFFF'
-        },
-        errorCorrectionLevel: 'M'
-      });
-
-      setQrCodeDataURL(dataURL);
-    } catch (error) {
-      console.error('Error generating member QR code:', error);
-    } finally {
-      setLoading(false);
+  const getSizeClasses = () => {
+    switch (qrSize) {
+      case 'small': return 'w-48 h-48';
+      case 'medium': return 'w-64 h-64';
+      case 'large': return 'w-96 h-96';
     }
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border p-6">
-      <div className="flex items-center gap-3 mb-6">
-        <QrCode className="w-6 h-6 text-primary" />
-        <h3 className="text-lg font-semibold text-gray-900">QR Code Generator</h3>
-      </div>
-
-      {/* Event Information */}
-      <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-        <h4 className="font-medium text-gray-900 mb-2">Event Details</h4>
+    <div className="space-y-6">
+      {/* Event Info */}
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <h4 className="font-semibold text-gray-900 mb-2">{eventTitle}</h4>
         <div className="space-y-1 text-sm text-gray-600">
-          <p><span className="font-medium">Title:</span> {eventTitle}</p>
-          <p><span className="font-medium">Date:</span> {new Date(eventDate).toLocaleDateString()}</p>
-          <p><span className="font-medium">Event ID:</span> {eventId}</p>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4" />
+            <span>{new Date(eventDate).toLocaleDateString()}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            <span>{new Date(eventDate).toLocaleTimeString()}</span>
+          </div>
+          {location && (
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              <span>{location}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* QR Code Display */}
-      <div className="text-center mb-6">
-        {loading ? (
-          <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
-              <p className="text-gray-600">Generating QR Code...</p>
-            </div>
-          </div>
-        ) : qrCodeDataURL ? (
-          <div className="space-y-4">
-            <div className="inline-block p-4 bg-white border rounded-lg">
-              <img 
-                src={qrCodeDataURL} 
-                alt="Event QR Code" 
-                className="w-64 h-64"
-              />
-            </div>
-            
-            {/* QR Code Actions */}
-            <div className="flex justify-center gap-3">
-              <button
-                onClick={downloadQRCode}
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90"
-              >
-                <Download className="w-4 h-4" />
-                Download
-              </button>
-              
-              <button
-                onClick={copyQRData}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-              >
-                {copied ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                ) : (
-                  <Copy className="w-4 h-4" />
-                )}
-                {copied ? 'Copied!' : 'Copy Data'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="h-64 bg-gray-50 rounded-lg flex items-center justify-center">
-            <p className="text-gray-500">No QR code generated</p>
-          </div>
-        )}
-      </div>
-
-      {/* QR Code Information */}
-      <div className="space-y-4">
-        <div>
-          <h4 className="font-medium text-gray-900 mb-2">QR Code Usage</h4>
-          <div className="text-sm text-gray-600 space-y-2">
-            <p>• <strong>Event Check-in:</strong> Members can scan this QR code to check in to the event</p>
-            <p>• <strong>Attendance Tracking:</strong> All scans are automatically recorded in the attendance system</p>
-            <p>• <strong>Real-time Updates:</strong> Attendance records update immediately when scanned</p>
-            <p>• <strong>Admin Visibility:</strong> Administrators can view all QR code check-ins in the attendance manager</p>
-          </div>
-        </div>
-
-        <div>
-          <h4 className="font-medium text-gray-900 mb-2">QR Code Data</h4>
-          <div className="p-3 bg-gray-50 rounded-lg">
-            <code className="text-xs text-gray-700 break-all">
-              {qrCodeText || 'No QR code data available'}
-            </code>
-          </div>
+      {/* Size Selector */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          QR Code Size
+        </label>
+        <div className="flex gap-2">
+          {(['small', 'medium', 'large'] as const).map((size) => (
+            <button
+              key={size}
+              onClick={() => setQrSize(size)}
+              className={`px-3 py-1 rounded-md text-sm ${
+                qrSize === size
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {size.charAt(0).toUpperCase() + size.slice(1)}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Regenerate Button */}
-      <div className="mt-6 pt-4 border-t">
+      {/* Generate Button or QR Display */}
+      {!qrCodeUrl ? (
         <button
           onClick={generateQRCode}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+          disabled={generating}
+          className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
         >
-          <QrCode className="w-4 h-4" />
-          Regenerate QR Code
+          {generating ? 'Generating QR Code...' : 'Generate QR Code for Check-in'}
         </button>
-      </div>
+      ) : (
+        <div className="text-center">
+          <div className={`${getSizeClasses()} mx-auto bg-white p-4 border rounded-lg mb-4`}>
+            <img src={qrCodeUrl} alt="Event QR Code" className="w-full h-full" />
+          </div>
+          
+          <div className="flex gap-3 mb-4">
+            <button
+              onClick={downloadQRCode}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              Download
+            </button>
+            <button
+              onClick={printQRCode}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
+          </div>
+
+          <button
+            onClick={copyCheckinUrl}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors mb-4"
+          >
+            {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+            {copied ? 'Link Copied!' : 'Copy Check-in Link'}
+          </button>
+
+          <div className="bg-yellow-50 p-3 rounded-lg text-left">
+            <p className="text-sm font-medium text-yellow-800 mb-2">📋 Instructions:</p>
+            <ul className="text-xs text-yellow-700 space-y-1 list-disc list-inside">
+              <li>Print this QR code and display at the event entrance</li>
+              <li>Each QR code expires after 4 hours for security</li>
+              <li>Members scan with their phone camera to check in</li>
+              <li>One scan per member - duplicate check-ins are prevented</li>
+              <li>Members must be logged into their account</li>
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default QRCodeGenerator;
-
-

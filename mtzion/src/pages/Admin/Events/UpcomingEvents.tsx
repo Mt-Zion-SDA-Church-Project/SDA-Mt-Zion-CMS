@@ -1,12 +1,15 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, QrCode } from 'lucide-react';
+import QRCodeGenerator from '../../../components/QRCodeGenerator';
 
 const UpcomingEvents: React.FC = () => {
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showQRGenerator, setShowQRGenerator] = useState(false);
+  const [selectedEventForQR, setSelectedEventForQR] = useState<any>(null);
 
   const handlePrint = () => window.print();
 
@@ -92,12 +95,13 @@ const UpcomingEvents: React.FC = () => {
                 <th className="text-left p-2 border-b">TYPE</th>
                 <th className="text-left p-2 border-b">LOCATION</th>
                 <th className="text-left p-2 border-b">DESCRIPTION</th>
+                <th className="text-left p-2 border-b hide-on-print">QR CODE</th>
               </tr>
             </thead>
             <tbody>
               {events.length === 0 ? (
                 <tr>
-                  <td className="p-2 text-gray-600 text-center" colSpan={5}>
+                  <td className="p-2 text-gray-600 text-center" colSpan={6}>
                     {loading ? 'Loading events...' : 'No upcoming events found'}
                   </td>
                 </tr>
@@ -120,6 +124,18 @@ const UpcomingEvents: React.FC = () => {
                     </td>
                     <td className="p-2 border-b">{e.location || '—'}</td>
                     <td className="p-2 border-b max-w-xs truncate">{e.description || '—'}</td>
+                    <td className="p-2 border-b hide-on-print">
+                      <button
+                        onClick={() => {
+                          setSelectedEventForQR(e);
+                          setShowQRGenerator(true);
+                        }}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Generate QR Code for this event"
+                      >
+                        <QrCode className="w-5 h-5" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -136,12 +152,41 @@ const UpcomingEvents: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* QR Code Generator Modal */}
+      {showQRGenerator && selectedEventForQR && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">Generate QR Code for Check-in</h3>
+                <button
+                  onClick={() => {
+                    setShowQRGenerator(false);
+                    setSelectedEventForQR(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <QRCodeGenerator
+                eventId={selectedEventForQR.id}
+                eventTitle={selectedEventForQR.title}
+                eventDate={selectedEventForQR.event_date}
+                onQRGenerated={(qrCode) => {
+                  console.log('QR Code generated for:', selectedEventForQR.title);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default UpcomingEvents;
-
-
-
-

@@ -1,85 +1,178 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import QRScanner from '../../components/QRScanner';
-import SimpleQRGenerator from '../../components/SimpleQRGenerator';
-import MobileQRTest from '../../components/MobileQRTest';
-import { QrCode, CheckCircle, Clock, Calendar, MapPin, Users, XCircle } from 'lucide-react';
+import { QrCode, CheckCircle, Clock, Calendar, MapPin, XCircle, Loader, Camera } from 'lucide-react';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
-interface Event {
-  id: string;
-  title: string;
-  description?: string;
-  event_date: string;
-  end_date?: string;
-  location?: string;
-  event_type: string;
-  max_attendees?: number;
-  registration_required: boolean;
-}
-
 const MemberQRCheckIn: React.FC = () => {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [eventDetails, setEventDetails] = useState<any>(null);
+  const [memberName, setMemberName] = useState('');
   const [recentCheckIns, setRecentCheckIns] = useState<any[]>([]);
 
-  useEffect(() => {
-    loadUpcomingEvents();
-    loadRecentCheckIns();
-  }, []);
-
-  const loadUpcomingEvents = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('events')
-        .select('id, title, description, event_date, end_date, location, event_type, max_attendees, registration_required')
-        .gte('event_date', new Date().toISOString())
-        .order('event_date', { ascending: true })
-        .limit(10);
-
-      if (error) throw error;
-      setEvents(data || []);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load events');
-    }
-  };
-
+  // Load recent check-ins for the logged-in member
   const loadRecentCheckIns = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const { data, error } = await supabase
-        .from('attendance')
-        .select(`
-          id,
-          check_in_time,
-          qr_scanned,
-          event:events(title, location),
-          member:members(first_name, last_name)
-        `)
-        .eq('attendance_date', today)
-        .order('check_in_time', { ascending: false })
-        .limit(10);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      if (error) throw error;
-      setRecentCheckIns(data || []);
+      const { data: member } = await supabase
+        .from('members')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (member) {
+        const { data, error } = await supabase
+          .from('attendance')
+          .select(`
+            id,
+            check_in_time,
+            attendance_date,
+            event:events(title, location, event_date)
+          `)
+          .eq('member_id', member.id)
+          .order('check_in_time', { ascending: false })
+          .limit(5);
+
+        if (!error && data) {
+          setRecentCheckIns(data);
+        }
+      }
     } catch (err: any) {
       console.error('Failed to load recent check-ins:', err);
     }
   };
 
-  const handleScanSuccess = (memberId: string, memberName: string) => {
-    setSuccess(`Successfully checked in: ${memberName}`);
-    setError(null);
-    loadRecentCheckIns(); // Refresh recent check-ins
-  };
+  useEffect(() => {
+    loadRecentCheckIns();
+  }, []);
 
-  const handleScanError = (errorMessage: string) => {
-    setError(errorMessage);
-    setSuccess(null);
-  };
+  useEffect(() => {
+    const processCheckIn = async () => {
+      const encodedData = searchParams.get('data');
+      
+      // If no QR data, show scanning instructions
+      if (!encodedData) {
+        setStatus('idle');
+        return;
+      }
+
+      setStatus('processing');
+      
+      try {
+        // Decode the QR data
+        const payload = JSON.parse(atob(encodedData));
+        
+        // Validate payload
+        if (!payload.eventId || payload.type !== 'event_checkin') {
+          throw new Error('Invalid QR code. Please scan a valid event QR code.');
+        }
+        
+        // Check if QR code expired (4 hours validity)
+        if (payload.expiresAt && Date.now() > payload.expiresAt) {
+          throw new Error('This QR code has expired. Please contact an administrator.');
+        }
+        
+        // Get current logged-in member
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !user) {
+          // Store the QR data to redirect back after login
+          localStorage.setItem('pendingCheckIn', encodedData);
+          navigate('/member/login');
+          return;
+        }
+        
+        // Get member details
+        const { data: member, error: memberError } = await supabase
+          .from('members')
+          .select('id, first_name, last_name')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (memberError || !member) {
+          throw new Error('Member profile not found. Please contact the church office.');
+        }
+        
+        setMemberName(`${member.first_name} ${member.last_name}`);
+        
+        // Get event details
+        const { data: event, error: eventError } = await supabase
+          .from('events')
+          .select('id, title, event_date, location, event_type')
+          .eq('id', payload.eventId)
+          .single();
+        
+        if (eventError) {
+          throw new Error('Event not found. Please contact an administrator.');
+        }
+        
+        setEventDetails(event);
+        
+        // Check if already checked in
+        const { data: existingCheckIn } = await supabase
+          .from('attendance')
+          .select('id')
+          .eq('member_id', member.id)
+          .eq('event_id', payload.eventId)
+          .maybeSingle();
+        
+        if (existingCheckIn) {
+          throw new Error(`You have already checked in for "${event.title}".`);
+        }
+        
+        // Record attendance
+        const { error: insertError } = await supabase
+          .from('attendance')
+          .insert({
+            member_id: member.id,
+            event_id: payload.eventId,
+            attendance_date: new Date().toISOString().split('T')[0],
+            attendance_type: event.event_type || 'event',
+            check_in_time: new Date().toISOString(),
+            qr_scanned: true,
+            created_at: new Date().toISOString()
+          });
+        
+        if (insertError) throw insertError;
+        
+        setStatus('success');
+        setMessage(`Welcome, ${member.first_name}! You have successfully checked in to "${event.title}".`);
+        
+        // Clear pending check-in and refresh recent check-ins
+        localStorage.removeItem('pendingCheckIn');
+        loadRecentCheckIns();
+        
+      } catch (err: any) {
+        console.error('Check-in error:', err);
+        setStatus('error');
+        setMessage(err.message || 'Failed to check in. Please try again or contact the administrator.');
+      }
+    };
+    
+    processCheckIn();
+  }, [searchParams, navigate]);
+
+  // Check for pending check-in after login
+  useEffect(() => {
+    const checkPendingCheckIn = async () => {
+      const pendingData = localStorage.getItem('pendingCheckIn');
+      if (pendingData) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // Redirect to process the pending check-in
+          window.location.href = `/member/qr-checkin?data=${pendingData}`;
+        }
+      }
+    };
+    
+    checkPendingCheckIn();
+  }, []);
 
   const getEventTypeColor = (type: string) => {
     switch (type) {
@@ -91,165 +184,200 @@ const MemberQRCheckIn: React.FC = () => {
     }
   };
 
-  return (
-    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
-      <MemberMobileNav title="QR Check-in" />
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <QrCode className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">QR Code Check-in</h1>
-          <p className="text-sm sm:text-base text-gray-600">Scan QR codes to check in to events and services</p>
+  // Processing state
+  if (status === 'processing') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <MemberMobileNav title="Processing Check-in" />
+        <div className="flex items-center justify-center min-h-[80vh]">
+          <div className="text-center p-6">
+            <Loader className="w-16 h-16 animate-spin text-blue-600 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-900">Processing Check-in...</h2>
+            <p className="text-gray-600 mt-2">Please wait while we verify your information</p>
+          </div>
         </div>
       </div>
-
-      {/* Status Messages */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
-          <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-          <p className="text-red-600">{error}</p>
-        </div>
-      )}
-
-      {success && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-          <p className="text-green-600">{success}</p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {/* QR Scanner */}
-        <div className="space-y-4">
-          <QRScanner
-            eventId={selectedEvent?.id}
-            onScanSuccess={handleScanSuccess}
-            onScanError={handleScanError}
-          />
-          
-          {/* Mobile QR Test (for phones) */}
-          <MobileQRTest />
-          
-          {/* Desktop QR Generator (for testing) */}
-          <SimpleQRGenerator />
-        </div>
-
-        {/* Event Selection */}
-        <div className="bg-white rounded-lg shadow-sm border p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <Calendar className="w-6 h-6 text-primary" />
-            <h3 className="text-lg font-semibold text-gray-900">Select Event</h3>
-          </div>
-
-          <div className="space-y-3">
-            <div className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-              <button
-                onClick={() => setSelectedEvent(null)}
-                className={`w-full text-left ${!selectedEvent ? 'text-primary font-medium' : 'text-gray-700'}`}
-              >
-                <div className="flex items-center justify-between">
-                  <span>General Service Check-in</span>
-                  {!selectedEvent && <CheckCircle className="w-4 h-4 text-primary" />}
+    );
+  }
+  
+  // Success state
+  if (status === 'success') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <MemberMobileNav title="Check-in Successful" />
+        <div className="max-w-md mx-auto p-4 mt-8">
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-12 h-12 text-green-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome!</h2>
+            <p className="text-gray-600 mb-4">{message}</p>
+            {eventDetails && (
+              <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                <h3 className="font-semibold text-gray-900 mb-2">Event Details:</h3>
+                <div className="space-y-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    <span>{new Date(eventDetails.event_date).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    <span>{new Date(eventDetails.event_date).toLocaleTimeString()}</span>
+                  </div>
+                  {eventDetails.location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      <span>{eventDetails.location}</span>
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm text-gray-500 mt-1">For regular church services</p>
-              </button>
-            </div>
-
-            {events.map((event) => (
-              <div key={event.id} className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                <button
-                  onClick={() => setSelectedEvent(event)}
-                  className={`w-full text-left ${selectedEvent?.id === event.id ? 'text-primary font-medium' : 'text-gray-700'}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium">{event.title}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEventTypeColor(event.event_type)}`}>
-                        {event.event_type.replace('_', ' ')}
-                      </span>
-                      {selectedEvent?.id === event.id && <CheckCircle className="w-4 h-4 text-primary" />}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-1 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      <span>{new Date(event.event_date).toLocaleDateString()} at {new Date(event.event_date).toLocaleTimeString()}</span>
-                    </div>
-                    {event.location && (
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4" />
-                        <span>{event.location}</span>
-                      </div>
-                    )}
-                    {event.max_attendees && (
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4" />
-                        <span>Max {event.max_attendees} attendees</span>
-                      </div>
-                    )}
-                  </div>
-                </button>
               </div>
-            ))}
+            )}
+            <button
+              onClick={() => navigate('/member/dashboard')}
+              className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Go to Dashboard
+            </button>
           </div>
-
-          {events.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
-              <Calendar className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-              <p>No upcoming events</p>
-              <p className="text-sm">Events will appear here when scheduled</p>
-            </div>
-          )}
         </div>
       </div>
-
-      {/* Recent Check-ins */}
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-        <div className="px-5 py-4 border-b bg-gray-50">
-          <div className="flex items-center gap-2 text-gray-800">
-            <Users className="w-5 h-5 text-primary" />
-            <h3 className="text-lg font-semibold">Recent Check-ins Today</h3>
+    );
+  }
+  
+  // Error state
+  if (status === 'error') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <MemberMobileNav title="Check-in Failed" />
+        <div className="max-w-md mx-auto p-4 mt-8">
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <XCircle className="w-12 h-12 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Check-in Failed</h2>
+            <p className="text-red-600 mb-6">{message}</p>
+            <button
+              onClick={() => navigate('/member/dashboard')}
+              className="w-full py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // Idle state - show instructions for scanning QR code
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <MemberMobileNav title="QR Check-in" />
+      
+      <div className="max-w-md mx-auto p-4 space-y-6">
+        {/* Instructions Card */}
+        <div className="bg-white rounded-lg shadow-lg p-6 text-center">
+          <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <QrCode className="w-12 h-12 text-blue-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Scan Event QR Code</h2>
+          <p className="text-gray-600 mb-4">
+            Use your phone camera to scan the QR code displayed at the church entrance.
+          </p>
+          
+          <div className="bg-blue-50 rounded-lg p-4 mb-6 text-left">
+            <h3 className="font-semibold text-blue-900 mb-3">How to check in:</h3>
+            <ol className="space-y-3">
+              <li className="flex items-start gap-3 text-sm text-blue-800">
+                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</span>
+                <span>Open your phone's camera app</span>
+              </li>
+              <li className="flex items-start gap-3 text-sm text-blue-800">
+                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</span>
+                <span>Point it at the QR code displayed at the entrance</span>
+              </li>
+              <li className="flex items-start gap-3 text-sm text-blue-800">
+                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</span>
+                <span>Tap the notification that appears</span>
+              </li>
+              <li className="flex items-start gap-3 text-sm text-blue-800">
+                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">4</span>
+                <span>Your attendance will be automatically recorded</span>
+              </li>
+            </ol>
+          </div>
+          
+          <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg">
+            <p className="font-medium text-gray-700 mb-1">📱 Need help?</p>
+            <p>Make sure you're logged into your account. If not, you'll be prompted to log in when you scan.</p>
           </div>
         </div>
 
-        <div className="p-4">
-          {recentCheckIns.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Users className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-              <p>No check-ins today</p>
-              <p className="text-sm">Check-ins will appear here as members scan QR codes</p>
+        {/* Recent Check-ins */}
+        {recentCheckIns.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+            <div className="px-5 py-4 border-b bg-gray-50">
+              <div className="flex items-center gap-2 text-gray-800">
+                <Clock className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-semibold">Your Recent Check-ins</h3>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {recentCheckIns.map((checkIn) => (
-                <div key={checkIn.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <div>
-                      <p className="font-medium text-gray-800">
-                        {checkIn.member?.first_name} {checkIn.member?.last_name}
+
+            <div className="p-4">
+              <div className="space-y-3">
+                {recentCheckIns.map((checkIn) => (
+                  <div key={checkIn.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <p className="font-medium text-gray-800">
+                          {checkIn.event?.title || 'General Service'}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {new Date(checkIn.check_in_time).toLocaleDateString()} at {new Date(checkIn.check_in_time).toLocaleTimeString()}
                       </p>
-                      <p className="text-sm text-gray-600">
-                        {checkIn.event?.title || 'General Service'}
-                        {checkIn.event?.location && ` • ${checkIn.event.location}`}
-                      </p>
+                      {checkIn.event?.location && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          📍 {checkIn.event.location}
+                        </p>
+                      )}
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-gray-800">
-                      {new Date(checkIn.check_in_time).toLocaleTimeString()}
-                    </p>
                     <div className="flex items-center gap-1">
                       <QrCode className="w-3 h-3 text-green-600" />
                       <span className="text-xs text-green-600">QR Scan</span>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Test Mode Card (for development) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+            <p className="text-sm font-medium text-yellow-800 mb-2">🧪 Development Test Mode</p>
+            <p className="text-xs text-yellow-700 mb-3">
+              For testing purposes only. In production, members will scan QR codes with their camera.
+            </p>
+            <button
+              onClick={() => {
+                // For testing - simulate a QR scan with a test event
+                const testPayload = btoa(JSON.stringify({
+                  eventId: 'YOUR_TEST_EVENT_ID', // Replace with an actual event ID from your database
+                  type: 'event_checkin',
+                  timestamp: Date.now(),
+                  expiresAt: Date.now() + (4 * 60 * 60 * 1000)
+                }));
+                window.location.href = `/member/qr-checkin?data=${testPayload}`;
+              }}
+              className="text-sm text-yellow-800 underline"
+            >
+              Click here for manual test mode
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

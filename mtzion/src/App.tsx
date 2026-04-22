@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout/Layout';
 import LoginForm from './components/Auth/LoginForm';
+import PostLoginRedirect from './components/Auth/PostLoginRedirect';
 import EmailCredentialsChecker from './components/EmailCredentialsChecker';
 import AdminDashboard from './pages/Admin/Dashboard';
 import MemberDashboard from './pages/Member/Dashboard';
@@ -76,6 +77,8 @@ function AppRoutes() {
     return (
       <Routes>
         <Route path="/login" element={<LoginForm />} />
+        {/* Allow QR deep link while logged out so ?data= is preserved and we can return after login */}
+        <Route path="/member/qr-checkin" element={<MemberQRCheckIn />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -83,7 +86,7 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={<Navigate to={user.role === 'admin' || user.role === 'super_admin' ? '/admin' : '/member'} replace />} />
+      <Route path="/login" element={<PostLoginRedirect />} />
       
       <Route element={<Layout />}>
         {/* Admin Routes */}

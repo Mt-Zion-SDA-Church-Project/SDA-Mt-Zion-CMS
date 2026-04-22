@@ -1,8 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { QrCode, CheckCircle, Clock, Calendar, MapPin, XCircle, Loader, Camera } from 'lucide-react';
+import { QrCode, CheckCircle, Clock, Calendar, MapPin, XCircle, Loader } from 'lucide-react';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
+
+const VALID_ATTENDANCE_TYPES = new Set([
+  'service',
+  'sabbath_school',
+  'prayer_meeting',
+  'event',
+  'multi_member',
+]);
+
+/** Events store free-text `event_type` (e.g. "general"); attendance uses an enum. */
+function mapEventTypeToAttendanceType(eventType: string | null | undefined) {
+  const t = (eventType || 'event').toLowerCase();
+  if (VALID_ATTENDANCE_TYPES.has(t)) {
+    return t as 'service' | 'sabbath_school' | 'prayer_meeting' | 'event' | 'multi_member';
+  }
+  return 'event';
+}
+
+function buildLoginUrlWithReturn(encodedData: string) {
+  const params = new URLSearchParams();
+  params.set('data', encodedData);
+  const returnPath = `/member/qr-checkin?${params.toString()}`;
+  return `/login?returnTo=${encodeURIComponent(returnPath)}`;
+}
 
 const MemberQRCheckIn: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -82,9 +106,12 @@ const MemberQRCheckIn: React.FC = () => {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         
         if (authError || !user) {
-          // Store the QR data to redirect back after login
-          localStorage.setItem('pendingCheckIn', encodedData);
-          navigate('/member/login');
+          try {
+            localStorage.setItem('pendingCheckIn', encodedData);
+          } catch {
+            /* ignore quota / private mode */
+          }
+          navigate(buildLoginUrlWithReturn(encodedData), { replace: true });
           return;
         }
         
@@ -133,13 +160,19 @@ const MemberQRCheckIn: React.FC = () => {
             member_id: member.id,
             event_id: payload.eventId,
             attendance_date: new Date().toISOString().split('T')[0],
-            attendance_type: event.event_type || 'event',
+            attendance_type: mapEventTypeToAttendanceType(event.event_type),
             check_in_time: new Date().toISOString(),
             qr_scanned: true,
             created_at: new Date().toISOString()
           });
         
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error('Attendance insert failed:', insertError);
+          throw new Error(
+            insertError.message ||
+              'Could not save attendance. If this persists, ask an admin to verify database permissions for the attendance table.'
+          );
+        }
         
         setStatus('success');
         setMessage(`Welcome, ${member.first_name}! You have successfully checked in to "${event.title}".`);
@@ -158,21 +191,23 @@ const MemberQRCheckIn: React.FC = () => {
     processCheckIn();
   }, [searchParams, navigate]);
 
-  // Check for pending check-in after login
+  // Fallback: older flows stored pending data without returnTo on the URL
   useEffect(() => {
-    const checkPendingCheckIn = async () => {
+    const run = async () => {
+      const encodedData = searchParams.get('data');
+      if (encodedData) return;
+
       const pendingData = localStorage.getItem('pendingCheckIn');
-      if (pendingData) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          // Redirect to process the pending check-in
-          window.location.href = `/member/qr-checkin?data=${pendingData}`;
-        }
-      }
+      if (!pendingData) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      navigate(`/member/qr-checkin?${new URLSearchParams({ data: pendingData }).toString()}`, { replace: true });
     };
-    
-    checkPendingCheckIn();
-  }, []);
+
+    void run();
+  }, [searchParams, navigate]);
 
   const getEventTypeColor = (type: string) => {
     switch (type) {

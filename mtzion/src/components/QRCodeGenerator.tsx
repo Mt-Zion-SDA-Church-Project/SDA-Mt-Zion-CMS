@@ -23,19 +23,27 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
   const [qrSize, setQrSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [copied, setCopied] = useState(false);
 
+  const getCheckInSiteOrigin = () => {
+    const fromEnv = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.trim().replace(/\/$/, '');
+    if (fromEnv && /^https?:\/\//i.test(fromEnv)) return fromEnv;
+    return window.location.origin;
+  };
+
+  const buildCheckinUrl = () => {
+    const payload = JSON.stringify({
+      eventId: eventId,
+      type: 'event_checkin',
+      timestamp: Date.now(),
+      expiresAt: Date.now() + (4 * 60 * 60 * 1000) // 4 hours validity
+    });
+    return `${getCheckInSiteOrigin()}/member/qr-checkin?data=${encodeURIComponent(btoa(payload))}`;
+  };
+
   const generateQRCode = async () => {
     setGenerating(true);
     try {
-      // Create signed payload for the event
-      const payload = JSON.stringify({
-        eventId: eventId,
-        type: 'event_checkin',
-        timestamp: Date.now(),
-        expiresAt: Date.now() + (4 * 60 * 60 * 1000) // 4 hours validity
-      });
-      
       // Create URL that members will scan
-      const checkinUrl = `${window.location.origin}/member/qr-checkin?data=${btoa(payload)}`;
+      const checkinUrl = buildCheckinUrl();
       
       const qrDataUrl = await QRCode.toDataURL(checkinUrl, {
         errorCorrectionLevel: 'H',
@@ -68,13 +76,7 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
   };
 
   const copyCheckinUrl = () => {
-    const payload = JSON.stringify({
-      eventId: eventId,
-      type: 'event_checkin',
-      timestamp: Date.now(),
-      expiresAt: Date.now() + (4 * 60 * 60 * 1000)
-    });
-    const checkinUrl = `${window.location.origin}/member/qr-checkin?data=${btoa(payload)}`;
+    const checkinUrl = buildCheckinUrl();
     navigator.clipboard.writeText(checkinUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

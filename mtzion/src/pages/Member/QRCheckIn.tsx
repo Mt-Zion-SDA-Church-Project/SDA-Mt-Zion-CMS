@@ -29,10 +29,21 @@ function buildLoginUrlWithReturn(encodedData: string) {
   return `/login?returnTo=${encodeURIComponent(returnPath)}`;
 }
 
+/** Postgres unique_violation — second insert blocked by DB (e.g. React Strict Mode double effect). */
+const PG_UNIQUE_VIOLATION = '23505';
+
+/** Serialize check-in for same user+event (same tab remounts / auth churn / double effect). */
+function runWithCheckInLock(userId: string, eventId: string, fn: () => Promise<void>): Promise<void> {
+  const name = `mtz-qr-checkin:${userId}:${eventId}`;
+  if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+    return navigator.locks.request(name, { mode: 'exclusive' }, fn);
+  }
+  return fn();
+}
+
 const MemberQRCheckIn: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [checkingIn, setCheckingIn] = useState(false);
   const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [eventDetails, setEventDetails] = useState<any>(null);
@@ -77,10 +88,14 @@ const MemberQRCheckIn: React.FC = () => {
     loadRecentCheckIns();
   }, []);
 
+  const dataParam = searchParams.get('data');
+
   useEffect(() => {
+    let cancelled = false;
+
     const processCheckIn = async () => {
-      const encodedData = searchParams.get('data');
-      
+      const encodedData = dataParam;
+
       // If no QR data, show scanning instructions
       if (!encodedData) {
         setStatus('idle');
@@ -88,7 +103,7 @@ const MemberQRCheckIn: React.FC = () => {
       }
 
       setStatus('processing');
-      
+
       try {
         // Decode the QR data
         const payload = JSON.parse(atob(encodedData));
@@ -112,10 +127,12 @@ const MemberQRCheckIn: React.FC = () => {
           } catch {
             /* ignore quota / private mode */
           }
-          navigate(buildLoginUrlWithReturn(encodedData), { replace: true });
+          if (!cancelled) {
+            navigate(buildLoginUrlWithReturn(encodedData), { replace: true });
+          }
           return;
         }
-        
+
         // Get member details
         const { data: member, error: memberError } = await supabase
           .from('members')
@@ -126,9 +143,11 @@ const MemberQRCheckIn: React.FC = () => {
         if (memberError || !member) {
           throw new Error('Member profile not found. Please contact the church office.');
         }
-        
+
+        if (cancelled) return;
+
         setMemberName(`${member.first_name} ${member.last_name}`);
-        
+
         // Get event details
         const { data: event, error: eventError } = await supabase
           .from('events')
@@ -139,64 +158,100 @@ const MemberQRCheckIn: React.FC = () => {
         if (eventError) {
           throw new Error('Event not found. Please contact an administrator.');
         }
-        
+
+        if (cancelled) return;
+
         setEventDetails(event);
-        
-        // Check if already checked in
-        const { data: existingCheckIn } = await supabase
-          .from('attendance')
-          .select('id')
-          .eq('member_id', member.id)
-          .eq('event_id', payload.eventId)
-          .maybeSingle();
-        
-        if (existingCheckIn) {
-          throw new Error(`You have already checked in for "${event.title}".`);
-        }
-        
-        // Record attendance
-        const { error: insertError } = await supabase
-          .from('attendance')
-          .insert({
-            member_id: member.id,
-            event_id: payload.eventId,
-            attendance_date: new Date().toISOString().split('T')[0],
-            attendance_type: mapEventTypeToAttendanceType(event.event_type),
-            check_in_time: new Date().toISOString(),
-            qr_scanned: true,
-            created_at: new Date().toISOString()
-          });
-        
-        if (insertError) {
-          console.error('Attendance insert failed:', insertError);
-          throw new Error(
-            insertError.message ||
-              'Could not save attendance. If this persists, ask an admin to verify database permissions for the attendance table.'
-          );
-        }
-        
-        setStatus('success');
-        setMessage(`Welcome, ${member.first_name}! You have successfully checked in to "${event.title}".`);
-        
-        // Clear pending check-in and refresh recent check-ins
-        localStorage.removeItem('pendingCheckIn');
-        loadRecentCheckIns();
-        
+
+        await runWithCheckInLock(user.id, payload.eventId, async () => {
+          if (cancelled) return;
+
+          // limit(1): safe if DB already has duplicates (maybeSingle() errors on 2+ rows)
+          const { data: existingRows } = await supabase
+            .from('attendance')
+            .select('id')
+            .eq('member_id', member.id)
+            .eq('event_id', payload.eventId)
+            .limit(1);
+
+          if (existingRows && existingRows.length > 0) {
+            if (!cancelled) {
+              setStatus('success');
+              setMessage(
+                `You're already checked in for "${event.title}", ${member.first_name}. Welcome!`
+              );
+              localStorage.removeItem('pendingCheckIn');
+              loadRecentCheckIns();
+            }
+            return;
+          }
+
+          if (cancelled) return;
+
+          const { error: insertError } = await supabase
+            .from('attendance')
+            .insert({
+              member_id: member.id,
+              event_id: payload.eventId,
+              attendance_date: new Date().toISOString().split('T')[0],
+              attendance_type: mapEventTypeToAttendanceType(event.event_type),
+              check_in_time: new Date().toISOString(),
+              qr_scanned: true,
+              created_at: new Date().toISOString(),
+            });
+
+          if (insertError) {
+            const msg = (insertError.message || '').toLowerCase();
+            const isUniqueViolation =
+              insertError.code === PG_UNIQUE_VIOLATION ||
+              msg.includes('duplicate key') ||
+              msg.includes('unique constraint');
+
+            if (isUniqueViolation) {
+              if (!cancelled) {
+                setStatus('success');
+                setMessage(
+                  `You're already checked in for "${event.title}", ${member.first_name}. Welcome!`
+                );
+                localStorage.removeItem('pendingCheckIn');
+                loadRecentCheckIns();
+              }
+              return;
+            }
+            console.error('Attendance insert failed:', insertError);
+            throw new Error(
+              insertError.message ||
+                'Could not save attendance. If this persists, ask an admin to verify database permissions for the attendance table.'
+            );
+          }
+
+          if (cancelled) return;
+
+          setStatus('success');
+          setMessage(`Welcome, ${member.first_name}! You have successfully checked in to "${event.title}".`);
+
+          localStorage.removeItem('pendingCheckIn');
+          loadRecentCheckIns();
+        });
       } catch (err: any) {
+        if (cancelled) return;
         console.error('Check-in error:', err);
         setStatus('error');
         setMessage(err.message || 'Failed to check in. Please try again or contact the administrator.');
       }
     };
-    
-    processCheckIn();
-  }, [searchParams, navigate]);
+
+    void processCheckIn();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataParam, navigate]);
 
   // Fallback: older flows stored pending data without returnTo on the URL
   useEffect(() => {
     const run = async () => {
-      const encodedData = searchParams.get('data');
-      if (encodedData) return;
+      if (dataParam) return;
 
       const pendingData = localStorage.getItem('pendingCheckIn');
       if (!pendingData) return;
@@ -208,7 +263,7 @@ const MemberQRCheckIn: React.FC = () => {
     };
 
     void run();
-  }, [searchParams, navigate]);
+  }, [dataParam, navigate]);
 
   const getEventTypeColor = (type: string) => {
     switch (type) {

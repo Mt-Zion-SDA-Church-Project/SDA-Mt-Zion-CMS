@@ -49,8 +49,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state change:', { event, session });
-        
+
         if (session?.user) {
+          // Token refresh fires often; re-fetching profile remounts heavy UI and can duplicate side effects (e.g. QR check-in).
+          if (event === 'TOKEN_REFRESHED') {
+            return;
+          }
           await fetchUserProfile(session.user.id);
         } else {
           setUser(null);

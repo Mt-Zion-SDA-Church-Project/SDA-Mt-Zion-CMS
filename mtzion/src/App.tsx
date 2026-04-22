@@ -38,16 +38,13 @@ import AttendanceManager from './pages/Admin/Attendance/AttendanceManager';
 import Reports from './pages/Admin/Reports/Reports';
 import AdminGallery from './pages/Admin/Gallery';
 import MemberGallery from './pages/Member/Gallery';
+import PageLoader from './components/Layout/PageLoader';
 
 function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode, requiredRole?: string }) {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <PageLoader message="Verifying your session…" />;
   }
 
   if (!user) {
@@ -66,11 +63,7 @@ function AppRoutes() {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <PageLoader message="Loading your workspace…" />;
   }
 
   if (!user) {

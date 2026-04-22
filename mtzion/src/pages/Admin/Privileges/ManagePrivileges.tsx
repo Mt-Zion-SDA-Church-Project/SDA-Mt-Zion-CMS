@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Shield, Users, Settings, Save, RefreshCw, Search, Filter, Zap, Eye, EyeOff } from 'lucide-react';
+import PageLoader from '../../../components/Layout/PageLoader';
 import { UserPrivilege, PrivilegeTab, SystemUser, Member } from '../../../types';
 
 const ManagePrivileges: React.FC = () => {
@@ -267,11 +268,8 @@ const ManagePrivileges: React.FC = () => {
   if (loading) {
     return (
       <div className="p-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center justify-center">
-            <RefreshCw className="w-6 h-6 animate-spin text-blue-600 mr-2" />
-            <span>Loading privileges...</span>
-          </div>
+        <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden">
+          <PageLoader variant="inline" message="Loading privileges…" className="min-h-[280px] bg-slate-50/50" />
         </div>
       </div>
     );

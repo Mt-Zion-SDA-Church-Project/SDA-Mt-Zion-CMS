@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { QrCode, CheckCircle, Clock, Calendar, MapPin, XCircle, Loader } from 'lucide-react';
+import { QrCode, CheckCircle, Clock, Calendar, MapPin, XCircle } from 'lucide-react';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
+import PageLoader from '../../components/Layout/PageLoader';
 
 const VALID_ATTENDANCE_TYPES = new Set([
   'service',
@@ -224,13 +225,11 @@ const MemberQRCheckIn: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-50">
         <MemberMobileNav title="Processing Check-in" />
-        <div className="flex items-center justify-center min-h-[80vh]">
-          <div className="text-center p-6">
-            <Loader className="w-16 h-16 animate-spin text-blue-600 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900">Processing Check-in...</h2>
-            <p className="text-gray-600 mt-2">Please wait while we verify your information</p>
-          </div>
-        </div>
+        <PageLoader
+          variant="inline"
+          message="Recording your attendance…"
+          className="bg-gray-50/80"
+        />
       </div>
     );
   }

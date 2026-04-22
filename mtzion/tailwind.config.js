@@ -10,8 +10,19 @@ export default {
         'slide': 'slide 60s linear infinite',
         'shimmer': 'shimmer 8s ease-in-out infinite',
         'float': 'float 6s ease-in-out infinite',
+        'bar-slide': 'barSlide 1.45s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+        'soft-breathe': 'softBreathe 2.5s ease-in-out infinite',
       },
       keyframes: {
+        barSlide: {
+          '0%': { transform: 'translateX(-120%)' },
+          '55%': { transform: 'translateX(220%)' },
+          '100%': { transform: 'translateX(-120%)' },
+        },
+        softBreathe: {
+          '0%, 100%': { opacity: '0.55', transform: 'scale(1)' },
+          '50%': { opacity: '1', transform: 'scale(1.02)' },
+        },
         slide: {
           '0%': { transform: 'translateX(0%)' },
           '100%': { transform: 'translateX(-50%)' },

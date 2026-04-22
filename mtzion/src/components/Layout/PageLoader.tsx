@@ -44,21 +44,21 @@ export default function PageLoader({
         </div>
       )}
 
-      <div className="relative z-10 flex flex-col items-center gap-7 px-6 w-full max-w-sm">
+      <div className="relative z-10 flex flex-col items-center gap-7 px-6 w-full max-w-md">
         <div className="relative animate-soft-breathe">
           <div
-            className="absolute -inset-3 rounded-3xl bg-gradient-to-br from-primary/15 via-blue-400/10 to-transparent blur-md"
+            className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-primary/15 via-blue-400/10 to-transparent blur-md"
             aria-hidden
           />
-          <div className="relative rounded-2xl bg-white/85 backdrop-blur-md shadow-lg shadow-slate-200/60 border border-white/80 px-10 py-9 flex flex-col items-center">
+          <div className="relative rounded-2xl bg-white/85 backdrop-blur-md shadow-lg shadow-slate-200/60 border border-white/80 px-12 py-10 sm:px-14 sm:py-11 flex flex-col items-center">
             <img
               src={logo}
               alt=""
-              width={88}
-              height={88}
-              className="w-[5.5rem] h-[5.5rem] object-contain select-none"
+              width={160}
+              height={160}
+              className="w-36 h-36 sm:w-40 sm:h-40 object-contain select-none"
             />
-            <div className="mt-8 h-1.5 w-full max-w-[200px] rounded-full bg-slate-200/90 overflow-hidden">
+            <div className="mt-8 h-1.5 w-full max-w-[260px] rounded-full bg-slate-200/90 overflow-hidden">
               <div className="h-full w-[42%] rounded-full bg-gradient-to-r from-primary via-sky-500 to-cyan-400 shadow-sm animate-bar-slide" />
             </div>
           </div>

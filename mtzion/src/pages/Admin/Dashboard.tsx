@@ -8,7 +8,6 @@ interface DashboardStats {
   totalMembers: number;
   visitorsThisMonth: number;
   upcomingEvents: number;
-  monthlyTithes: number;
   monthlyOfferings: number;
   recentActivities: Array<{
     action: string;
@@ -37,7 +36,6 @@ const AdminDashboard: React.FC = () => {
     totalMembers: 0,
     visitorsThisMonth: 0,
     upcomingEvents: 0,
-    monthlyTithes: 0,
     monthlyOfferings: 0,
     recentActivities: [],
     upcomingBirthdays: [],
@@ -54,69 +52,52 @@ const AdminDashboard: React.FC = () => {
     const channel = supabase
       .channel('cash_offering_accounts_dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_offering_accounts' }, () => {
-        loadDashboardData();
+        void loadDashboardData({ silent: true });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (options?: { silent?: boolean }) => {
     try {
-      setLoading(true);
-      
-      // Load all data in parallel
+      if (!options?.silent) setLoading(true);
+
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+      const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString();
+      const nowIso = new Date().toISOString();
+      const in30Iso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const in7Ms = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+      // Fewer round-trips: one events window query; DB sum for offertory (no row fan-out)
       const [
         membersResult,
         visitorsResult,
-        eventsResult,
-        eventsListResult,
-        tithesResult,
-        offeringsResult,
+        eventsWindowResult,
+        offeringsSumResult,
         activitiesResult,
-        birthdaysResult
+        birthdaysResult,
       ] = await Promise.all([
-        // Total members count
-        supabase
-          .from('members')
-          .select('id', { count: 'exact', head: true }),
-        
-        // Visitors this month
+        supabase.from('members').select('id', { count: 'exact', head: true }),
+
         supabase
           .from('visitors')
           .select('id', { count: 'exact', head: true })
-          .gte('visit_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()),
-        
-        // Upcoming events count (next 30 days)
-        supabase
-          .from('events')
-          .select('id', { count: 'exact', head: true })
-          .gte('event_date', new Date().toISOString())
-          .lte('event_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()),
-        
-        // Upcoming events list (next 7 days)
+          .gte('visit_date', monthStart),
+
         supabase
           .from('events')
           .select('id, title, event_date, event_type, location')
-          .gte('event_date', new Date().toISOString())
-          .lte('event_date', new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString())
+          .gte('event_date', nowIso)
+          .lte('event_date', in30Iso)
           .order('event_date', { ascending: true })
-          .limit(5),
-        
-        // Monthly tithes
-        supabase
-          .from('tithes')
-          .select('amount')
-          .gte('tithe_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
-          .lte('tithe_date', new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString()),
-        
-        // Monthly offertory (Financial summaries)
+          .limit(250),
+
         supabase
           .from('cash_offering_accounts')
-          .select('total, service_date')
-          .gte('service_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
-          .lte('service_date', new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString()),
-        
-        // Recent activities
+          .select('total.sum()')
+          .gte('service_date', monthStart)
+          .lte('service_date', monthEnd),
+
         supabase
           .from('activity_logs')
           .select(`
@@ -126,32 +107,44 @@ const AdminDashboard: React.FC = () => {
           `)
           .order('created_at', { ascending: false })
           .limit(5),
-        
-        // Upcoming birthdays (next 30 days)
+
         supabase
           .from('members')
           .select('first_name, last_name, date_of_birth')
           .not('date_of_birth', 'is', null)
-          .limit(10)
+          .limit(120),
       ]);
 
-      // Calculate totals
-      const totalTithes = tithesResult.data?.reduce((sum, tithe) => sum + Number(tithe.amount), 0) || 0;
-      const totalOfferings = offeringsResult.data?.reduce((sum, row) => sum + Number((row as any).total || 0), 0) || 0;
+      const eventsInWindow = eventsWindowResult.data ?? [];
+      const upcomingEventsCount = eventsInWindow.length;
+
+      const sumRow = offeringsSumResult.data?.[0] as { sum: string | number | null } | undefined;
+      const totalOfferings = Number(sumRow?.sum ?? 0);
+
+      const unwrapMember = (m: unknown): { first_name?: string; last_name?: string } | null => {
+        if (m == null) return null;
+        if (Array.isArray(m)) return (m[0] as { first_name?: string; last_name?: string }) ?? null;
+        return m as { first_name?: string; last_name?: string };
+      };
 
       // Format recent activities
-      const formattedActivities = activitiesResult.data?.map(activity => ({
-        action: activity.action,
-        user: activity.members ? `${activity.members.first_name} ${activity.members.last_name}` : 'System',
-        time: formatTimeAgo(activity.created_at),
-        timestamp: activity.created_at
-      })) || [];
+      const formattedActivities = activitiesResult.data?.map(activity => {
+        const mem = unwrapMember((activity as { members?: unknown }).members);
+        return {
+          action: activity.action,
+          user: mem?.first_name != null ? `${mem.first_name} ${mem.last_name ?? ''}`.trim() : 'System',
+          time: formatTimeAgo(activity.created_at),
+          timestamp: activity.created_at,
+        };
+      }) || [];
 
       // If there are no recent activities in the database, generate helpful insights
+      const eventsNext7 = eventsInWindow.filter((e) => new Date(e.event_date).getTime() <= in7Ms);
+
       const fallbackActivities = formattedActivities.length === 0
         ? [
             {
-              action: `Upcoming events this week: ${(eventsListResult.data || []).length}`,
+              action: `Upcoming events this week: ${eventsNext7.length}`,
               user: 'System',
               time: 'Just now',
               timestamp: new Date().toISOString()
@@ -171,7 +164,7 @@ const AdminDashboard: React.FC = () => {
           ]
         : formattedActivities;
 
-      // Format upcoming birthdays
+      // Format upcoming birthdays (client filter from capped sample)
       const formattedBirthdays = birthdaysResult.data?.map(member => {
         const birthDate = new Date(member.date_of_birth);
         const today = new Date();
@@ -181,8 +174,6 @@ const AdminDashboard: React.FC = () => {
         const upcomingDate = thisYear > today ? thisYear : nextYear;
         const daysUntil = Math.ceil((upcomingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         
-        console.log(`Admin - Member: ${member.first_name} ${member.last_name}, Birth date: ${member.date_of_birth}, Days until: ${daysUntil}`);
-        
         return {
           name: `${member.first_name} ${member.last_name}`,
           date: `${birthDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${daysUntil} days)`,
@@ -190,13 +181,11 @@ const AdminDashboard: React.FC = () => {
           daysUntil
         };
       }).filter(birthday => {
-        const isValid = birthday.daysUntil >= 0 && birthday.daysUntil <= 30;
-        console.log(`Admin - Birthday filter: ${birthday.name}, daysUntil: ${birthday.daysUntil}, valid: ${isValid}`);
-        return isValid;
+        return birthday.daysUntil >= 0 && birthday.daysUntil <= 30;
       }) || [];
 
-      // Format upcoming events list
-      const formattedEventsList = eventsListResult.data?.map(event => {
+      // Format upcoming events list (next 7 days, max 5)
+      const formattedEventsList = eventsNext7.slice(0, 5).map(event => {
         const eventDate = new Date(event.event_date);
         return {
           id: event.id,
@@ -219,8 +208,7 @@ const AdminDashboard: React.FC = () => {
       setStats({
         totalMembers: membersResult.count || 0,
         visitorsThisMonth: visitorsResult.count || 0,
-        upcomingEvents: eventsResult.count || 0,
-        monthlyTithes: totalTithes,
+        upcomingEvents: upcomingEventsCount,
         monthlyOfferings: totalOfferings,
         recentActivities: fallbackActivities,
         upcomingBirthdays: formattedBirthdays.slice(0, 5),

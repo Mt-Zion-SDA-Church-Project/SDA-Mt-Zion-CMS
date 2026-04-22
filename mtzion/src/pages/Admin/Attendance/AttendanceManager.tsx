@@ -36,12 +36,18 @@ import {
   ResponsiveContainer
 } from 'recharts';
 
+/** PostgREST returns many-to-one embeds as an object; older code assumed an array. */
+function unwrapEmbedded<T>(data: T | T[] | null | undefined): T | null {
+  if (data == null) return null;
+  return Array.isArray(data) ? (data[0] ?? null) : data;
+}
+
 interface AttendanceRecord {
   id: string;
   member_id: string;
   event_id?: string;
   attendance_date: string;
-  attendance_type: 'service' | 'sabbath_school' | 'prayer_meeting' | 'event';
+  attendance_type: 'service' | 'sabbath_school' | 'prayer_meeting' | 'event' | 'multi_member';
   check_in_time: string;
   qr_scanned: boolean;
   created_at: string;
@@ -49,8 +55,12 @@ interface AttendanceRecord {
     id: string;
     first_name: string;
     last_name: string;
-    email: string;
+    email?: string;
     phone?: string;
+    member_number?: string;
+    membership_date?: string;
+    occupation?: string;
+    address?: string;
   } | null;
   event?: {
     id: string;
@@ -150,7 +160,17 @@ const AttendanceManager: React.FC = () => {
           check_in_time,
           qr_scanned,
           created_at,
-          member:members(id, first_name, last_name, email, phone),
+          member:members(
+            id,
+            first_name,
+            last_name,
+            email,
+            phone,
+            member_number,
+            membership_date,
+            occupation,
+            address
+          ),
           event:events(id, title, event_date, location)
         `)
         .order('check_in_time', { ascending: false });
@@ -183,8 +203,8 @@ const AttendanceManager: React.FC = () => {
 
       const transformedData = (data || []).map((record: any) => ({
         ...record,
-        member: record.member?.[0] || null,
-        event: record.event?.[0] || null
+        member: unwrapEmbedded(record.member),
+        event: unwrapEmbedded(record.event),
       }));
 
       setAttendanceRecords(transformedData);
@@ -215,7 +235,7 @@ const AttendanceManager: React.FC = () => {
 
       const eventMap = new Map<string, EventAttendance>();
       (data || []).forEach((record: any) => {
-        const event = record.event?.[0];
+        const event = unwrapEmbedded(record.event);
         if (event && record.event_id) {
           if (!eventMap.has(record.event_id)) {
             eventMap.set(record.event_id, {
@@ -337,17 +357,37 @@ const AttendanceManager: React.FC = () => {
   };
 
   const exportAttendanceCSV = () => {
-    const headers = ['Date', 'Member Name', 'Email', 'Phone', 'Event', 'Type', 'Check-in Time', 'QR Scanned', 'Location'];
+    const headers = [
+      'Date',
+      'Member Name',
+      'Member No',
+      'Email',
+      'Phone',
+      'Occupation',
+      'Member Since',
+      'Address',
+      'Event',
+      'Type',
+      'Check-in Time',
+      'QR Scanned',
+      'Location',
+    ];
     const csvData = filteredRecords.map(record => [
       record.attendance_date,
       `${record.member?.first_name || ''} ${record.member?.last_name || ''}`.trim(),
+      record.member?.member_number || '',
       record.member?.email || '',
       record.member?.phone || '',
+      record.member?.occupation || '',
+      record.member?.membership_date
+        ? new Date(record.member.membership_date).toLocaleDateString()
+        : '',
+      record.member?.address || '',
       record.event?.title || 'General Service',
       record.attendance_type,
       new Date(record.check_in_time).toLocaleString(),
       record.qr_scanned ? 'Yes' : 'No',
-      record.event?.location || 'Main Sanctuary'
+      record.event?.location || 'Main Sanctuary',
     ]);
 
     const csv = [headers, ...csvData].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -367,6 +407,8 @@ const AttendanceManager: React.FC = () => {
       record.member?.first_name?.toLowerCase().includes(searchTerm) ||
       record.member?.last_name?.toLowerCase().includes(searchTerm) ||
       record.member?.email?.toLowerCase().includes(searchTerm) ||
+      record.member?.member_number?.toLowerCase().includes(searchTerm) ||
+      record.member?.occupation?.toLowerCase().includes(searchTerm) ||
       record.event?.title?.toLowerCase().includes(searchTerm)
     );
   });
@@ -377,6 +419,7 @@ const AttendanceManager: React.FC = () => {
       case 'sabbath_school': return 'bg-green-100 text-green-800';
       case 'prayer_meeting': return 'bg-purple-100 text-purple-800';
       case 'event': return 'bg-orange-100 text-orange-800';
+      case 'multi_member': return 'bg-teal-100 text-teal-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -653,9 +696,38 @@ const AttendanceManager: React.FC = () => {
                   filteredRecords.map((record) => (
                     <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                       <td className="p-3 border-b">{new Date(record.attendance_date).toLocaleDateString()}</td>
-                      <td className="p-3 border-b">
-                        <div className="font-medium">{record.member?.first_name} {record.member?.last_name}</div>
-                        <div className="text-xs text-gray-500">{record.member?.email}</div>
+                      <td className="p-3 border-b max-w-[14rem] sm:max-w-xs lg:max-w-md align-top">
+                        {record.member ? (
+                          <>
+                            <div className="font-medium text-gray-900">
+                              {[record.member.first_name, record.member.last_name].filter(Boolean).join(' ') || '—'}
+                            </div>
+                            <div className="text-xs text-gray-600 mt-1">
+                              {[
+                                record.member.member_number ? `No. ${record.member.member_number}` : null,
+                                record.member.phone || null,
+                                record.member.email || null,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1 leading-snug">
+                              {[
+                                record.member.occupation || null,
+                                record.member.membership_date
+                                  ? `Member since ${new Date(record.member.membership_date).toLocaleDateString()}`
+                                  : null,
+                                record.member.address || null,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-xs text-amber-700">
+                            {record.member_id ? 'Member profile not linked or hidden' : 'No member'}
+                          </span>
+                        )}
                        </td>
                       <td className="p-3 border-b">
                         <div className="font-medium">{record.event?.title || 'General Service'}</div>

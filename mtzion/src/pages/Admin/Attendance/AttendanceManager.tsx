@@ -93,6 +93,40 @@ interface EventAttendance {
   manual_count: number;
 }
 
+const CHURCH_CSV_TAG = 'SDA_MT_ZION_CHURCH_KIGOME';
+
+/** Safe single segment for CSV filenames (Windows-safe, uppercase, underscores). */
+function slugifyForFilename(raw: string, fallback: string): string {
+  const base = (raw || fallback).trim() || fallback;
+  const slug = base
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_')
+    .toUpperCase();
+  return slug.slice(0, 80) || fallback;
+}
+
+function resolveExportEventLabel(
+  selectedEventId: string,
+  eventAttendance: EventAttendance[],
+  records: AttendanceRecord[]
+): string {
+  if (selectedEventId !== 'all') {
+    const ev = eventAttendance.find((e) => e.event_id === selectedEventId);
+    if (ev?.event_title) return ev.event_title;
+  }
+  const titles = new Set(
+    records
+      .map((r) => r.event?.title?.trim())
+      .filter((t): t is string => Boolean(t))
+  );
+  if (titles.size === 1) return [...titles][0];
+  if (titles.size > 1) return 'MULTIPLE_EVENTS';
+  return 'ALL_EVENTS';
+}
+
 const AttendanceManager: React.FC = () => {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [eventAttendance, setEventAttendance] = useState<EventAttendance[]>([]);
@@ -395,7 +429,10 @@ const AttendanceManager: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `attendance_${new Date().toISOString().split('T')[0]}.csv`;
+    const eventLabel = resolveExportEventLabel(selectedEvent, eventAttendance, filteredRecords);
+    const eventSlug = slugifyForFilename(eventLabel, 'ATTENDANCE');
+    const dateStr = new Date().toISOString().split('T')[0];
+    a.download = `${eventSlug}_ATTENDANCELIST_${CHURCH_CSV_TAG}_${dateStr}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

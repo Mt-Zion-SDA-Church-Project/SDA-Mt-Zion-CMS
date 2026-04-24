@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { getAuthEmailRedirectUrl } from '../../../lib/authRedirect';
 import { UserPlus, Trash2, Edit3, Shield, Mail } from 'lucide-react';
 import { sendCredentialsEmail } from '../../../lib/emailService';
 
@@ -78,6 +79,7 @@ const AddSystemUser: React.FC = () => {
         email: form.email,
         password: form.password,
         options: {
+          emailRedirectTo: getAuthEmailRedirectUrl(),
           data: {
             full_name: form.fullName,
             username: form.username

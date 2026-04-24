@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { getAuthEmailRedirectUrl } from '../../../lib/authRedirect';
 import sdaLogo from '../../../assets/sda-logo.png';
 
 const MemberDetails: React.FC = () => {
@@ -194,6 +195,7 @@ const MemberDetails: React.FC = () => {
         email: selectedMember.email,
         password: createUserForm.password,
         options: {
+          emailRedirectTo: getAuthEmailRedirectUrl(),
           data: {
             full_name: `${selectedMember.first_name} ${selectedMember.last_name}`.trim(),
             username: selectedMember.email.split('@')[0] // Use email prefix as username

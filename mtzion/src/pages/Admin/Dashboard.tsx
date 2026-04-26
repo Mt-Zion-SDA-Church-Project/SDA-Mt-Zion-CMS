@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Users, UserCheck, Calendar, DollarSign, TrendingUp, Heart, Activity } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 import logo from '../../assets/sda-logo.png';
 
 interface DashboardStats {
@@ -30,38 +32,44 @@ interface DashboardStats {
   }>;
 }
 
+const emptyStats: DashboardStats = {
+  totalMembers: 0,
+  visitorsThisMonth: 0,
+  upcomingEvents: 0,
+  monthlyOfferings: 0,
+  recentActivities: [],
+  upcomingBirthdays: [],
+  upcomingEventsList: [],
+};
+
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState<DashboardStats>({
-    totalMembers: 0,
-    visitorsThisMonth: 0,
-    upcomingEvents: 0,
-    monthlyOfferings: 0,
-    recentActivities: [],
-    upcomingBirthdays: [],
-    upcomingEventsList: []
-  });
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
+  const formatTimeAgo = (timestamp: string) => {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diffInSeconds = Math.floor((now.getTime() - time.getTime()) / 1000);
 
-  // Realtime refresh when financial summaries change
-  useEffect(() => {
-    const channel = supabase
-      .channel('cash_offering_accounts_dashboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_offering_accounts' }, () => {
-        void loadDashboardData({ silent: true });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+    return `${Math.floor(diffInSeconds / 86400)} days ago`;
+  };
 
-  const loadDashboardData = async (options?: { silent?: boolean }) => {
-    try {
-      if (!options?.silent) setLoading(true);
+  const formatCurrency = (amount: number) => {
+    const formatted = new Intl.NumberFormat('en-UG', {
+      style: 'currency',
+      currency: 'UGX',
+      maximumFractionDigits: 0,
+    }).format(amount);
+    return formatted.replace('UGX', 'USh');
+  };
 
+  const dashboardQuery = useQuery({
+    queryKey: queryKeys.admin.dashboardStats(),
+    queryFn: async (): Promise<DashboardStats> => {
+      try {
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
       const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString();
       const nowIso = new Date().toISOString();
@@ -205,42 +213,40 @@ const AdminDashboard: React.FC = () => {
         };
       }) || [];
 
-      setStats({
+      return {
         totalMembers: membersResult.count || 0,
         visitorsThisMonth: visitorsResult.count || 0,
         upcomingEvents: upcomingEventsCount,
         monthlyOfferings: totalOfferings,
         recentActivities: fallbackActivities,
         upcomingBirthdays: formattedBirthdays.slice(0, 5),
-        upcomingEventsList: formattedEventsList
-      });
-
-    } catch (error) {
+        upcomingEventsList: formattedEventsList,
+      };
+      } catch (error) {
       console.error('Error loading dashboard data:', error);
-    } finally {
-      setLoading(false);
+      return emptyStats;
     }
-  };
+    },
+  });
 
-  const formatTimeAgo = (timestamp: string) => {
-    const now = new Date();
-    const time = new Date(timestamp);
-    const diffInSeconds = Math.floor((now.getTime() - time.getTime()) / 1000);
-    
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
-    return `${Math.floor(diffInSeconds / 86400)} days ago`;
-  };
+  useEffect(() => {
+    const channel = supabase
+      .channel('cash_offering_accounts_dashboard')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_offering_accounts' },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.admin.dashboardStats() });
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
-  const formatCurrency = (amount: number) => {
-    const formatted = new Intl.NumberFormat('en-UG', {
-      style: 'currency',
-      currency: 'UGX',
-      maximumFractionDigits: 0
-    }).format(amount);
-    return formatted.replace('UGX', 'USh');
-  };
+  const stats = dashboardQuery.data ?? emptyStats;
+  const loading = dashboardQuery.isPending;
 
   const handleQuickAction = (action: string) => {
     switch (action) {

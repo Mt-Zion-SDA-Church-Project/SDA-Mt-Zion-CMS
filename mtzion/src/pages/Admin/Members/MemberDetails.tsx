@@ -1,13 +1,14 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import { getAuthEmailRedirectUrl } from '../../../lib/authRedirect';
 import sdaLogo from '../../../assets/sda-logo.png';
 
 const MemberDetails: React.FC = () => {
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -20,84 +21,94 @@ const MemberDetails: React.FC = () => {
     familyId: '',
     status: '',
   });
-  const [familyOptions, setFamilyOptions] = useState<{id: string; name: string}[]>([]);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [createUserForm, setCreateUserForm] = useState({
     password: '',
     role: 'member'
   });
-  const [creatingUser, setCreatingUser] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const membersQuery = useQuery({
+    queryKey: queryKeys.members.memberDetails(),
+    queryFn: async () => {
       console.log('Loading members in MemberDetails...');
-      
-      // First, let's check if we can access the members table at all
+
       const { data: testData, error: testError } = await supabase
         .from('members')
         .select('id, first_name, last_name')
         .limit(1);
-      
+
       if (testError) {
         console.error('Test query failed:', testError);
-        setError(`Database access error: ${testError.message}`);
-        setLoading(false);
-        return;
+        throw new Error(`Database access error: ${testError.message}`);
       }
-      
+
       console.log('Test query successful, found members:', testData);
-      
-      // Now run the full query
+
       const { data, error } = await supabase
         .from('members')
-        .select(`
+        .select(
+          `
           id, first_name, middle_name, last_name, gender, phone, email, family_id, user_id,
           member_number, status, occupation,
           families:family_id(family_name)
-        `)
+        `
+        )
         .order('created_at', { ascending: false })
         .limit(500);
-      
+
       if (error) {
         console.error('Error loading members in MemberDetails:', error);
-        setError(`Query error: ${error.message}`);
-        setLoading(false);
-        return;
+        throw new Error(`Query error: ${error.message}`);
       }
-      
+
       console.log('Raw members data in MemberDetails:', data);
       console.log('Number of members found:', data?.length || 0);
-      
-      // Transform the data to include ministries as an array
-      const transformedData = (data || []).map(member => ({
-        ...member,
-        ministries: [], // We'll fetch ministries separately if needed
-        system_users: null // We'll fetch this separately if needed
-      }));
-      
-      console.log('Transformed members data in MemberDetails:', transformedData);
-      setRows(transformedData);
-      setLoading(false);
-    } catch (err: any) {
-      console.error('Failed to load members in MemberDetails:', err);
-      setError(`Unexpected error: ${err.message || 'Failed to load members'}`);
-      setLoading(false);
-    }
-  };
 
-  const loadFamilies = async () => {
-    const { data } = await supabase
-      .from('families')
-      .select('id, family_name')
-      .order('family_name');
-    if (data) {
-      setFamilyOptions(data.map((f: any) => ({ id: f.id, name: f.family_name })));
-    }
+      const transformedData = (data || []).map((member) => ({
+        ...member,
+        ministries: [],
+        system_users: null,
+      }));
+
+      console.log('Transformed members data in MemberDetails:', transformedData);
+      return transformedData;
+    },
+  });
+
+  const familiesQuery = useQuery({
+    queryKey: queryKeys.members.familiesOptions(),
+    queryFn: async () => {
+      const { data } = await supabase.from('families').select('id, family_name').order('family_name');
+      if (data) {
+        return data.map((f: { id: string; family_name: string }) => ({ id: f.id, name: f.family_name }));
+      }
+      return [];
+    },
+  });
+
+  const rows = membersQuery.data ?? [];
+  const familyOptions = familiesQuery.data ?? [];
+  const loading = membersQuery.isPending || familiesQuery.isPending;
+  const error =
+    actionError ??
+    (membersQuery.error instanceof Error
+      ? membersQuery.error.message
+      : membersQuery.error
+        ? String(membersQuery.error)
+        : null) ??
+    (familiesQuery.error instanceof Error
+      ? familiesQuery.error.message
+      : familiesQuery.error
+        ? String(familiesQuery.error)
+        : null);
+
+  const load = () => {
+    setActionError(null);
+    void membersQuery.refetch();
+    void familiesQuery.refetch();
   };
 
   const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -119,26 +130,32 @@ const MemberDetails: React.FC = () => {
     });
   };
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: Record<string, unknown> }) => {
+      const { error } = await supabase.from('members').update(payload).eq('id', id);
+      if (error) throw error;
+    },
+    onMutate: () => setActionError(null),
+    onSuccess: () => {
+      setEditingId(null);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.members.memberDetails() });
+    },
+    onError: (err: Error) => setActionError(err.message || 'Update failed'),
+  });
+
   const handleUpdate = async () => {
     if (!editingId) return;
-    try {
-      const payload: any = {
-        first_name: editForm.firstName,
-        middle_name: editForm.middleName || null,
-        last_name: editForm.lastName,
-        gender: editForm.gender || null,
-        phone: editForm.phone || null,
-        email: editForm.email || null,
-        family_id: editForm.familyId || null,
-        status: editForm.status || 'active',
-      };
-      const { error } = await supabase.from('members').update(payload).eq('id', editingId);
-      if (error) throw error;
-      setEditingId(null);
-      load();
-    } catch (err: any) {
-      setError(err.message || 'Update failed');
-    }
+    const payload: Record<string, unknown> = {
+      first_name: editForm.firstName,
+      middle_name: editForm.middleName || null,
+      last_name: editForm.lastName,
+      gender: editForm.gender || null,
+      phone: editForm.phone || null,
+      email: editForm.email || null,
+      family_id: editForm.familyId || null,
+      status: editForm.status || 'active',
+    };
+    updateMutation.mutate({ id: editingId, payload });
   };
 
   const cancelEdit = () => {
@@ -153,18 +170,24 @@ const MemberDetails: React.FC = () => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   };
 
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('members').delete().in('id', ids);
+      if (error) throw error;
+    },
+    onMutate: () => setActionError(null),
+    onSuccess: () => {
+      setSelectedIds([]);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.members.memberDetails() });
+    },
+    onError: (err: Error) => setActionError(err.message || 'Delete failed'),
+  });
+
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
     const ok = window.confirm('Delete selected members?');
     if (!ok) return;
-    try {
-      const { error } = await supabase.from('members').delete().in('id', selectedIds);
-      if (error) throw error;
-      setSelectedIds([]);
-      load();
-    } catch (err: any) {
-      setError(err.message || 'Delete failed');
-    }
+    deleteMutation.mutate(selectedIds);
   };
 
   const generatePassword = () => {
@@ -182,60 +205,68 @@ const MemberDetails: React.FC = () => {
     setShowCreateUserModal(true);
   };
 
-  const handleCreateUserSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedMember) return;
-
-    setCreatingUser(true);
-    setError(null);
-
-    try {
-      // First, create the auth user with email and password
+  const createUserMutation = useMutation({
+    mutationFn: async ({
+      member,
+      password,
+      role,
+    }: {
+      member: NonNullable<typeof selectedMember>;
+      password: string;
+      role: string;
+    }) => {
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: selectedMember.email,
-        password: createUserForm.password,
+        email: member.email,
+        password,
         options: {
           emailRedirectTo: getAuthEmailRedirectUrl(),
           data: {
-            full_name: `${selectedMember.first_name} ${selectedMember.last_name}`.trim(),
-            username: selectedMember.email.split('@')[0] // Use email prefix as username
-          }
-        }
+            full_name: `${member.first_name} ${member.last_name}`.trim(),
+            username: member.email.split('@')[0],
+          },
+        },
       });
 
       if (authError) throw authError;
 
-      // Then create the system user record
-      const { error: systemUserError } = await supabase
-        .from('system_users')
-        .insert({ 
-          user_id: authData.user?.id,
-          username: selectedMember.email.split('@')[0],
-          full_name: `${selectedMember.first_name} ${selectedMember.last_name}`.trim(),
-          email: selectedMember.email,
-          role: createUserForm.role
-        });
+      const { error: systemUserError } = await supabase.from('system_users').insert({
+        user_id: authData.user?.id,
+        username: member.email.split('@')[0],
+        full_name: `${member.first_name} ${member.last_name}`.trim(),
+        email: member.email,
+        role,
+      });
 
       if (systemUserError) throw systemUserError;
 
-      // Update the member record to link to the system user
       const { error: memberUpdateError } = await supabase
         .from('members')
         .update({ user_id: authData.user?.id })
-        .eq('id', selectedMember.id);
+        .eq('id', member.id);
 
       if (memberUpdateError) throw memberUpdateError;
-
-      setSuccess(`System user created successfully for ${selectedMember.first_name} ${selectedMember.last_name}`);
+    },
+    onMutate: () => setActionError(null),
+    onSuccess: (_data, variables) => {
+      setSuccess(
+        `System user created successfully for ${variables.member.first_name} ${variables.member.last_name}`
+      );
       setShowCreateUserModal(false);
       setSelectedMember(null);
-      load(); // Refresh the member list
+      void queryClient.invalidateQueries({ queryKey: queryKeys.members.memberDetails() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.manage() });
+    },
+    onError: (err: Error) => setActionError(err.message || 'Failed to create system user'),
+  });
 
-    } catch (err: any) {
-      setError(err.message || 'Failed to create system user');
-    } finally {
-      setCreatingUser(false);
-    }
+  const handleCreateUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMember) return;
+    createUserMutation.mutate({
+      member: selectedMember,
+      password: createUserForm.password,
+      role: createUserForm.role,
+    });
   };
 
   const closeCreateUserModal = () => {
@@ -246,18 +277,20 @@ const MemberDetails: React.FC = () => {
   };
 
   useEffect(() => {
-    load();
-    loadFamilies();
     const channel = supabase
       .channel('members-details')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
-        load();
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'members' },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.members.memberDetails() });
+        }
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [queryClient]);
 
   return (
     <div className="p-4">
@@ -503,10 +536,10 @@ const MemberDetails: React.FC = () => {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={creatingUser}
+                  disabled={createUserMutation.isPending}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60"
                 >
-                  {creatingUser ? 'Creating...' : 'Create User'}
+                  {createUserMutation.isPending ? 'Creating...' : 'Create User'}
                 </button>
               </div>
             </form>

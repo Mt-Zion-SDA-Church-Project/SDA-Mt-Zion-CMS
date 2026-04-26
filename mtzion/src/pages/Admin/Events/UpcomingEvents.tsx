@@ -1,52 +1,51 @@
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import { RefreshCw, QrCode } from 'lucide-react';
 import QRCodeGenerator from '../../../components/QRCodeGenerator';
 
 const UpcomingEvents: React.FC = () => {
-  const [events, setEvents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { data: events = [], isFetching, isError, error, refetch: load } = useQuery({
+    queryKey: queryKeys.events.upcoming(),
+    queryFn: async () => {
+      const nowIso = new Date().toISOString();
+      console.log('Loading upcoming events from:', nowIso); // Debug log
+
+      const { data, error: qError } = await supabase
+        .from('events')
+        .select('id, title, description, event_date, event_type, location')
+        .gte('event_date', nowIso)
+        .order('event_date', { ascending: true });
+
+      if (qError) {
+        console.error('Error loading events:', qError); // Debug log
+        throw qError;
+      }
+      console.log('Loaded events:', data); // Debug log
+      return data || [];
+    },
+  });
+
   const [showQRGenerator, setShowQRGenerator] = useState(false);
   const [selectedEventForQR, setSelectedEventForQR] = useState<any>(null);
 
   const handlePrint = () => window.print();
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    const nowIso = new Date().toISOString();
-    console.log('Loading upcoming events from:', nowIso); // Debug log
-    
-    const { data, error } = await supabase
-      .from('events')
-      .select('id, title, description, event_date, event_type, location')
-      .gte('event_date', nowIso)
-      .order('event_date', { ascending: true });
-    
-    if (error) {
-      console.error('Error loading events:', error); // Debug log
-      setError(error.message);
-    } else {
-      console.log('Loaded events:', data); // Debug log
-      setEvents(data || []);
-    }
-    setLoading(false);
-  };
+  const loading = isFetching;
 
   useEffect(() => {
-    load();
+    const inv = () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.upcoming() });
+    };
     const channel = supabase
       .channel('events-upcoming')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
-        load();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, inv)
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [queryClient]);
 
   return (
     <div className="p-4">
@@ -81,7 +80,7 @@ const UpcomingEvents: React.FC = () => {
           </div>
           <div className="ml-auto flex items-center gap-2">
             {loading && <span className="text-sm text-gray-600">Loading...</span>}
-            {error && <span className="text-sm text-red-600">{error}</span>}
+            {isError && error && <span className="text-sm text-red-600">{(error as Error).message}</span>}
           </div>
         </div>
 

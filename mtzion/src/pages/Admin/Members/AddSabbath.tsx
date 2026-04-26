@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 
 const AddSabbath: React.FC = () => {
+  const queryClient = useQueryClient();
   const [resourceForm, setResourceForm] = useState({
     title: '',
     category: 'adult' as 'adult' | 'children',
@@ -22,37 +25,24 @@ const AddSabbath: React.FC = () => {
 
   // Left form removed, submission handler no longer needed
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setUploading(true);
-    setUploadMsg(null);
-    setUploadErr(null);
-    
-    try {
-      // Validation
-      if (!resourceFile) throw new Error('Please choose a file to upload');
-      if (!resourceForm.title.trim()) throw new Error('Please enter a title');
-      
-      // File size limit (25MB)
+  const uploadMutation = useMutation({
+    mutationFn: async (vars: { title: string; category: 'adult' | 'children'; file: File }) => {
+      if (!vars.file) throw new Error('Please choose a file to upload');
+      if (!vars.title.trim()) throw new Error('Please enter a title');
       const maxBytes = 25 * 1024 * 1024;
-      if (resourceFile.size > maxBytes) {
+      if (vars.file.size > maxBytes) {
         throw new Error('File too large. Max allowed size is 25MB.');
       }
 
-      // Get current user for debugging
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError) {
         console.error('Auth error:', authError);
         throw new Error('Authentication error. Please log in again.');
       }
-      
       if (!user) {
         throw new Error('No authenticated user found');
       }
 
-      console.log('Current user:', { id: user.id, email: user.email });
-
-      // Check user type for debugging
       const { data: systemUser } = await supabase
         .from('system_users')
         .select('role, is_active')
@@ -70,16 +60,14 @@ const AddSabbath: React.FC = () => {
         member: member || null 
       });
 
-      // Upload to storage
       const bucket = 'sabbath-resources';
-      const fileExt = resourceFile.name.split('.').pop();
-      const path = `${resourceForm.category}/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+      const fileExt = vars.file.name.split('.').pop();
+      const path = `${vars.category}/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
 
-      console.log('Uploading to storage:', { bucket, path });
-      const { error: upErr } = await supabase.storage.from(bucket).upload(path, resourceFile, {
+      const { error: upErr } = await supabase.storage.from(bucket).upload(path, vars.file, {
         cacheControl: '3600',
         upsert: false,
-        contentType: resourceFile.type || 'application/octet-stream',
+        contentType: vars.file.type || 'application/octet-stream',
       });
       
       if (upErr) {
@@ -87,48 +75,50 @@ const AddSabbath: React.FC = () => {
         throw new Error(`Storage upload failed: ${upErr.message}`);
       }
 
-      console.log('Storage upload successful');
-
-      // Get public URL
       const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
       const fileUrl = publicUrlData?.publicUrl || null;
 
-      // Prepare database insert (without created_by - let database handle it)
       const insertPayload = {
-        title: resourceForm.title.trim(),
-        category: resourceForm.category,
+        title: vars.title.trim(),
+        category: vars.category,
         file_path: path,
         file_url: fileUrl,
       };
 
-      console.log('Attempting database insert:', insertPayload);
-      
-      // Insert into sabbath_resources table
-      const { error: insErr, data: insertedData } = await supabase
+      const { error: insErr } = await supabase
         .from('sabbath_resources')
         .insert(insertPayload)
         .select();
 
       if (insErr) {
         console.error('Database insert error:', insErr);
-        
-        // Clean up uploaded file since insert failed
         await supabase.storage.from(bucket).remove([path]);
-        
         throw new Error(`Database error: ${insErr.message}`);
       }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sabbath.resources() });
+    },
+  });
 
-      console.log('Database insert successful:', insertedData);
-
-      // Success
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUploading(true);
+    setUploadMsg(null);
+    setUploadErr(null);
+    
+    try {
+      if (!resourceFile) throw new Error('Please choose a file to upload');
+      await uploadMutation.mutateAsync({
+        title: resourceForm.title,
+        category: resourceForm.category,
+        file: resourceFile,
+      });
       setUploadMsg('Resource uploaded successfully');
       setResourceForm({ title: '', category: resourceForm.category });
       setResourceFile(null);
-      
-      // Clear file input
       const fileInput = document.getElementById('sabbath-resource-file') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
-
     } catch (err: any) {
       console.error('Upload error details:', err);
       const msg = err?.message || 'Failed to upload resource';

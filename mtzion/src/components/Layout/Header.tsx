@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Menu, Bell, LogOut, User, Calendar, Heart, FileText, Gift, Images } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 
 interface HeaderProps {
   toggleSidebar: () => void;
@@ -9,35 +11,63 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
   const { user, signOut } = useAuth();
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
+  const notificationsQuery = useQuery({
+    queryKey: queryKeys.notifications.header(),
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('notifications')
         .select('id, type, title, message, data, is_read, created_at')
         .order('created_at', { ascending: false })
         .limit(10);
-      if (!error) setNotifications(data || []);
-    };
-    load();
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
+  const notifications = notificationsQuery.data ?? [];
+
+  useEffect(() => {
     const channel = supabase
       .channel('header-notifications')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => load())
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications' },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.notifications.header() });
+        }
+      )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  const markAsReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notifications.header() });
+    },
+  });
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
-      case 'event': return Calendar;
-      case 'birthday': return Heart;
-      case 'receipt': return FileText;
-      case 'announcement': return Gift;
-      case 'gallery': return Images;
-      default: return Bell;
+      case 'event':
+        return Calendar;
+      case 'birthday':
+        return Heart;
+      case 'receipt':
+        return FileText;
+      case 'announcement':
+        return Gift;
+      case 'gallery':
+        return Images;
+      default:
+        return Bell;
     }
   };
 
@@ -57,10 +87,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
   };
 
   const markAsRead = async (id: string) => {
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', id);
+    await markAsReadMutation.mutateAsync(id);
   };
 
   return (
@@ -73,16 +100,14 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <h2 className="text-xl font-semibold text-gray-800">
-            Welcome, {user?.full_name}
-          </h2>
+          <h2 className="text-xl font-semibold text-gray-800">Welcome, {user?.full_name}</h2>
         </div>
 
         <div className="flex items-center space-x-4">
           <div className="relative">
             <button onClick={() => setOpen(!open)} className="p-2 rounded-md hover:bg-gray-100 relative">
               <Bell className="w-5 h-5 text-gray-600" />
-              {notifications.filter(n => !n.is_read).length > 0 && (
+              {notifications.filter((n) => !n.is_read).length > 0 && (
                 <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
               )}
             </button>
@@ -108,13 +133,9 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
                             {n.message && (
                               <div className="text-xs text-gray-600 mt-1 line-clamp-2">{n.message}</div>
                             )}
-                            <div className="text-xs text-gray-500 mt-1">
-                              {new Date(n.created_at).toLocaleString()}
-                            </div>
+                            <div className="text-xs text-gray-500 mt-1">{new Date(n.created_at).toLocaleString()}</div>
                           </div>
-                          {!n.is_read && (
-                            <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1"></div>
-                          )}
+                          {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1"></div>}
                         </a>
                       );
                     })
@@ -123,7 +144,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
               </div>
             )}
           </div>
-          
+
           <div className="flex items-center space-x-2">
             <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
               <User className="w-4 h-4 text-blue-600" />
@@ -131,11 +152,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
             <span className="text-sm text-gray-700">{user?.full_name}</span>
           </div>
 
-          <button
-            onClick={signOut}
-            className="p-2 rounded-md hover:bg-red-50 text-red-600"
-            title="Sign Out"
-          >
+          <button onClick={signOut} className="p-2 rounded-md hover:bg-red-50 text-red-600" title="Sign Out">
             <LogOut className="w-5 h-5" />
           </button>
         </div>

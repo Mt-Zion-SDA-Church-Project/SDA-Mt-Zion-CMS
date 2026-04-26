@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
-import { useNavigate } from 'react-router-dom';
+import { queryKeys } from '../../../lib/queryKeys';
 
 const AddMember: React.FC = () => {
   const [form, setForm] = useState({
@@ -19,11 +20,74 @@ const AddMember: React.FC = () => {
   });
 
   type FamilyOpt = { id: string; name: string };
-  type MinistryOpt = { id: string; name: string; gender_restriction?: string };
+  type MinistryOpt = { id: string; name: string; gender_restriction?: string | null };
   type SystemUserOpt = { id: string; user_id: string; full_name: string; username: string; email: string; role: string };
-  const [familyOptions, setFamilyOptions] = useState<FamilyOpt[]>([]);
-  const [ministryOptions, setMinistryOptions] = useState<MinistryOpt[]>([]);
-  const [systemUserOptions, setSystemUserOptions] = useState<SystemUserOpt[]>([]);
+  const queryClient = useQueryClient();
+
+  const fallbackMinistries: MinistryOpt[] = [
+    { id: '1', name: 'None', gender_restriction: null },
+    { id: '2', name: 'Coristers', gender_restriction: null },
+    { id: '3', name: 'Deacon', gender_restriction: 'male' },
+    { id: '4', name: 'Deaconess', gender_restriction: 'female' },
+    { id: '5', name: 'Communication', gender_restriction: null },
+    { id: '6', name: 'Education', gender_restriction: null },
+    { id: '7', name: 'Family', gender_restriction: null },
+    { id: '8', name: 'Sabbath School', gender_restriction: null },
+    { id: '9', name: 'Health', gender_restriction: null },
+    { id: '10', name: 'Men', gender_restriction: 'male' },
+    { id: '11', name: 'Women', gender_restriction: 'female' },
+    { id: '12', name: 'Stewardship', gender_restriction: null },
+    { id: '13', name: 'Youth', gender_restriction: null },
+    { id: '14', name: 'Publishing', gender_restriction: null },
+  ];
+
+  const { data: familyOptions = [] } = useQuery({
+    queryKey: queryKeys.addMember.families(),
+    queryFn: async () => {
+      const { data: familiesData, error: familiesError } = await supabase
+        .from('families')
+        .select('id, family_name')
+        .order('family_name');
+      if (familiesError || !familiesData) return [] as FamilyOpt[];
+      return familiesData.map((f: any) => ({ id: f.id, name: f.family_name }));
+    },
+  });
+
+  const { data: ministryOptions = [] } = useQuery({
+    queryKey: queryKeys.addMember.ministries(),
+    queryFn: async () => {
+      const { data: ministriesData, error: ministriesError } = await supabase
+        .from('ministries')
+        .select('id, name, gender_restriction')
+        .order('name');
+      if (!ministriesError && ministriesData && ministriesData.length > 0) {
+        return ministriesData.map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          gender_restriction: m.gender_restriction,
+        })) as MinistryOpt[];
+      }
+      return fallbackMinistries;
+    },
+  });
+
+  const { data: systemUserOptions = [] } = useQuery({
+    queryKey: queryKeys.addMember.systemUsers(),
+    queryFn: async () => {
+      const { data: systemUsersData, error: systemUsersError } = await supabase
+        .from('system_users')
+        .select('id, user_id, full_name, username, email, role')
+        .eq('is_active', true)
+        .order('full_name');
+      if (systemUsersError || !systemUsersData) return [] as SystemUserOpt[];
+      const { data: existingMembers } = await supabase
+        .from('members')
+        .select('user_id')
+        .not('user_id', 'is', null);
+      const existingUserIds = new Set(existingMembers?.map(m => m.user_id) || []);
+      return systemUsersData.filter((su: any) => !existingUserIds.has(su.user_id)) as SystemUserOpt[];
+    },
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -116,97 +180,6 @@ const AddMember: React.FC = () => {
     return false;
   };
 
-  useEffect(() => {
-    // Load families, ministries, and system users from DB
-    (async () => {
-      try {
-        // Load families
-        const { data: familiesData, error: familiesError } = await supabase
-          .from('families')
-          .select('id, family_name')
-          .order('family_name');
-        if (!familiesError && familiesData) {
-          setFamilyOptions(familiesData.map((f: any) => ({ id: f.id, name: f.family_name })));
-        }
-
-        // Load ministries
-        const { data: ministriesData, error: ministriesError } = await supabase
-          .from('ministries')
-          .select('id, name, gender_restriction')
-          .order('name');
-        
-        if (!ministriesError && ministriesData && ministriesData.length > 0) {
-          setMinistryOptions(ministriesData.map((m: any) => ({ 
-            id: m.id, 
-            name: m.name, 
-            gender_restriction: m.gender_restriction 
-          })));
-        } else {
-          // Fallback to static ministries if table doesn't exist or is empty
-          console.log('Ministries table not found or empty, using fallback');
-          const fallbackMinistries = [
-            { id: '1', name: 'None', gender_restriction: null },
-            { id: '2', name: 'Coristers', gender_restriction: null },
-            { id: '3', name: 'Deacon', gender_restriction: 'male' },
-            { id: '4', name: 'Deaconess', gender_restriction: 'female' },
-            { id: '5', name: 'Communication', gender_restriction: null },
-            { id: '6', name: 'Education', gender_restriction: null },
-            { id: '7', name: 'Family', gender_restriction: null },
-            { id: '8', name: 'Sabbath School', gender_restriction: null },
-            { id: '9', name: 'Health', gender_restriction: null },
-            { id: '10', name: 'Men', gender_restriction: 'male' },
-            { id: '11', name: 'Women', gender_restriction: 'female' },
-            { id: '12', name: 'Stewardship', gender_restriction: null },
-            { id: '13', name: 'Youth', gender_restriction: null },
-            { id: '14', name: 'Publishing', gender_restriction: null },
-          ];
-          setMinistryOptions(fallbackMinistries);
-        }
-
-        // Load system users (only those not already linked to members)
-        const { data: systemUsersData, error: systemUsersError } = await supabase
-          .from('system_users')
-          .select('id, user_id, full_name, username, email, role')
-          .eq('is_active', true)
-          .order('full_name');
-        
-        if (!systemUsersError && systemUsersData) {
-          // Filter out system users who already have member records
-          const { data: existingMembers } = await supabase
-            .from('members')
-            .select('user_id')
-            .not('user_id', 'is', null);
-          
-          const existingUserIds = new Set(existingMembers?.map(m => m.user_id) || []);
-          const availableSystemUsers = systemUsersData.filter(su => !existingUserIds.has(su.user_id));
-          
-          setSystemUserOptions(availableSystemUsers);
-        }
-      } catch (err) {
-        console.error('Error loading options:', err);
-        // Use fallback ministries on error
-        const fallbackMinistries = [
-          { id: '1', name: 'None', gender_restriction: null },
-          { id: '2', name: 'Coristers', gender_restriction: null },
-          { id: '3', name: 'Deacon', gender_restriction: 'male' },
-          { id: '4', name: 'Deaconess', gender_restriction: 'female' },
-          { id: '5', name: 'Communication', gender_restriction: null },
-          { id: '6', name: 'Education', gender_restriction: null },
-          { id: '7', name: 'Family', gender_restriction: null },
-          { id: '8', name: 'Sabbath School', gender_restriction: null },
-          { id: '9', name: 'Health', gender_restriction: null },
-          { id: '10', name: 'Men', gender_restriction: 'male' },
-          { id: '11', name: 'Women', gender_restriction: 'female' },
-          { id: '12', name: 'Stewardship', gender_restriction: null },
-          { id: '13', name: 'Youth', gender_restriction: null },
-          { id: '14', name: 'Publishing', gender_restriction: null },
-        ];
-        setMinistryOptions(fallbackMinistries);
-      }
-    })();
-  }, []);
-
-  const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -220,59 +193,49 @@ const AddMember: React.FC = () => {
     return `MBR-${y}${m}${d}-${random}`;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      // Insert member (first try with place_of_birth)
+  const submitMutation = useMutation({
+    mutationFn: async (vars: { form: typeof form; ministryOptions: MinistryOpt[] }) => {
+      const { form: f, ministryOptions: mo } = vars;
       const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
       const insertPayload: any = {
-        first_name: form.firstName,
-        middle_name: form.middleName || null,
-        last_name: form.lastName,
-        gender: form.gender || null,
-        date_of_birth: form.dateOfBirth || null,
-        address: form.residence || null,
-        place_of_birth: form.placeOfBirth || null,
-        phone: form.phone || null,
-        email: form.email || null,
-        family_id: isUuid(form.familyId) ? form.familyId : null,
-        user_id: form.userId || null, // Link to system user
+        first_name: f.firstName,
+        middle_name: f.middleName || null,
+        last_name: f.lastName,
+        gender: f.gender || null,
+        date_of_birth: f.dateOfBirth || null,
+        address: f.residence || null,
+        place_of_birth: f.placeOfBirth || null,
+        phone: f.phone || null,
+        email: f.email || null,
+        family_id: isUuid(f.familyId) ? f.familyId : null,
+        user_id: f.userId || null,
         status: 'active',
         membership_date: new Date().toISOString().slice(0, 10),
         member_number: generateMemberNumber(),
       };
 
       let memberInsertRes = await supabase.from('members').insert(insertPayload).select('id').single();
+      let usedPlaceFallback = false;
 
-      // Fallback if the place_of_birth column doesn't exist yet
       if (memberInsertRes.error && /place_of_birth/i.test(memberInsertRes.error.message || '')) {
         const { place_of_birth, ...withoutPlace } = insertPayload;
         memberInsertRes = await supabase.from('members').insert(withoutPlace).select('id').single();
-        if (!memberInsertRes.error) {
-          setSuccess('Member created (note: run DB migration to add place_of_birth).');
-        }
+        if (!memberInsertRes.error) usedPlaceFallback = true;
       }
 
       if (memberInsertRes.error || !memberInsertRes.data) throw memberInsertRes.error || new Error('Insert failed');
 
       const memberId = memberInsertRes.data.id;
-
-      // Insert ministries into join table (ignore None)
-      const ministriesToSave = (form.ministries || []).filter((m) => m && m !== 'None');
+      const ministriesToSave = (f.ministries || []).filter((m) => m && m !== 'None');
+      let ministryErr: string | undefined;
       if (ministriesToSave.length > 0) {
-        // Map ministry names to ministry IDs
         const ministryRows = ministriesToSave.map((ministryName) => {
-          const ministry = ministryOptions.find(m => m.name === ministryName);
+          const ministry = mo.find((m) => m.name === ministryName);
           return {
             member_id: memberId,
             ministry_id: ministry?.id || null
           };
         }).filter(row => {
-          // Only include rows with valid ministry IDs that exist in the database
           return row.ministry_id && row.ministry_id !== '1' && row.ministry_id !== '2' && 
                  row.ministry_id !== '3' && row.ministry_id !== '4' && row.ministry_id !== '5' &&
                  row.ministry_id !== '6' && row.ministry_id !== '7' && row.ministry_id !== '8' &&
@@ -284,21 +247,43 @@ const AddMember: React.FC = () => {
           const mmRes = await supabase.from('member_ministries').insert(ministryRows);
           if (mmRes.error) {
             console.error('Error inserting ministries:', mmRes.error);
-            // Continue without blocking member creation
-            setError(`Member created but ministries could not be saved: ${mmRes.error.message}`);
+            ministryErr = `Member created but ministries could not be saved: ${mmRes.error.message}`;
           }
         } else {
           console.warn('No valid ministry IDs found for selected ministries:', ministriesToSave);
         }
       }
 
+      return { usedPlaceFallback, ministryErr };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.members.list() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.addMember.systemUsers() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.manage() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.forAddUser() });
+    },
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const { usedPlaceFallback, ministryErr } = await submitMutation.mutateAsync({ form, ministryOptions });
+      if (usedPlaceFallback) {
+        setSuccess('Member created (note: run DB migration to add place_of_birth).');
+      }
+      if (ministryErr) {
+        setError(ministryErr);
+      }
       setSuccess((prev) => prev ?? 'Member created successfully');
       setForm((prev) => ({
         ...prev,
         firstName: '', middleName: '', lastName: '', gender: '', dateOfBirth: '',
         residence: '', placeOfBirth: '', ministries: [], phone: '', email: '', familyId: '', userId: ''
       }));
-      // Don't navigate away - stay on the same page to see the new member in the right panel
     } catch (err: any) {
       setError(err.message || 'Failed to create member');
     } finally {

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { NavLink } from 'react-router-dom';
 import { 
   Users, 
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 import { UserPrivilege } from '../../types';
 import logo from '../../assets/sda-logo.png';
 
@@ -43,22 +45,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
   const [isSystemExpanded, setIsSystemExpanded] = useState(false);
   const [isLogsExpanded, setIsLogsExpanded] = useState(false);
   const [isEventsExpanded, setIsEventsExpanded] = useState(false);
-  const [userPrivileges, setUserPrivileges] = useState<UserPrivilege[]>([]);
+  const privilegesQuery = useQuery({
+    queryKey: queryKeys.sidebar.privileges(user?.id ?? 'none', user?.role ?? 'none'),
+    enabled: !!user?.id,
+    queryFn: async (): Promise<UserPrivilege[]> => {
+      console.log('=== LOAD USER PRIVILEGES START ===');
+      console.log('User object:', user);
 
-  const loadUserPrivileges = async () => {
-    console.log('=== LOAD USER PRIVILEGES START ===');
-    console.log('User object:', user);
-    
-    try {
       const userType = user?.role === 'admin' ? 'admin' : 'member';
       console.log('Loading privileges for user:', user?.id, 'type:', userType);
-      
-      // Get the actual database ID based on user type
-      let actualUserId = user?.id;
-      
+
+      let actualUserId: string | undefined = user?.id;
+
       if (userType === 'admin') {
         console.log('Looking up admin in system_users table...');
-        // For admins, get the system_users.id
         const { data: systemUser, error: systemError } = await supabase
           .from('system_users')
           .select('id')
@@ -68,7 +68,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         actualUserId = systemUser?.id;
       } else {
         console.log('Looking up member in members table...');
-        // For members, get the members.id
         const { data: member, error: memberError } = await supabase
           .from('members')
           .select('id')
@@ -77,44 +76,29 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         console.log('Member lookup result:', { member, memberError });
         actualUserId = member?.id;
       }
-      
+
       console.log('Actual user ID for privileges:', actualUserId);
-      
-      if (actualUserId) {
-        console.log('Querying user_privileges table...');
-        const { data, error } = await supabase
-          .from('user_privileges')
-          .select('*')
-          .eq('user_id', actualUserId)
-          .eq('user_type', userType);
 
-        console.log('Privileges loaded:', data, 'error:', error);
-        if (!error && data) {
-          setUserPrivileges(data);
-        }
-      } else {
+      if (!actualUserId) {
         console.log('No actualUserId found, cannot load privileges');
+        return [];
       }
-    } catch (error) {
-      console.error('Error loading user privileges:', error);
-    }
-    console.log('=== LOAD USER PRIVILEGES END ===');
-  };
 
-  // Load user privileges
-  useEffect(() => {
-    console.log('=== SIDEBAR USEEFFECT ===');
-    console.log('User in useEffect:', user);
-    console.log('User ID:', user?.id);
-    console.log('User role:', user?.role);
-    
-    if (user?.id) {
-      console.log('User ID exists, calling loadUserPrivileges...');
-      loadUserPrivileges();
-    } else {
-      console.log('No user ID, not loading privileges');
-    }
-  }, [user?.id]);
+      console.log('Querying user_privileges table...');
+      const { data, error } = await supabase
+        .from('user_privileges')
+        .select('*')
+        .eq('user_id', actualUserId)
+        .eq('user_type', userType);
+
+      console.log('Privileges loaded:', data, 'error:', error);
+      if (error) throw error;
+      console.log('=== LOAD USER PRIVILEGES END ===');
+      return data ?? [];
+    },
+  });
+
+  const userPrivileges = privilegesQuery.data ?? [];
 
   const hasPrivilege = (tabName: string): boolean => {
     if (!user?.id) return true; // Default to allowed if no user

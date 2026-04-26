@@ -1,7 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
+
+const VISITORS_LIST_LIMIT = 100;
 
 const AddVisitor: React.FC = () => {
+  const queryClient = useQueryClient();
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -13,20 +18,46 @@ const AddVisitor: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [rows, setRows] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const load = async () => {
-    const { data, error } = await supabase
-      .from('visitors')
-      .select('id, first_name, last_name, phone, address, date_of_birth, created_at')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (!error) setRows(data || []);
-  };
+  const { data: rows = [] } = useQuery({
+    queryKey: queryKeys.visitors.list(VISITORS_LIST_LIMIT),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('visitors')
+        .select('id, first_name, last_name, phone, address, date_of_birth, created_at')
+        .order('created_at', { ascending: false })
+        .limit(VISITORS_LIST_LIMIT);
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
-  useEffect(() => { load(); }, []);
+  const saveMutation = useMutation({
+    mutationFn: async (vars: { editingId: string | null; payload: Record<string, unknown> }) => {
+      if (vars.editingId) {
+        const { error: updErr } = await supabase.from('visitors').update(vars.payload).eq('id', vars.editingId);
+        if (updErr) throw updErr;
+      } else {
+        const { error: insErr } = await supabase.from('visitors').insert(vars.payload).single();
+        if (insErr) throw insErr;
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['visitors'] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('visitors').delete().in('id', ids);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['visitors'] });
+    },
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -45,7 +76,7 @@ const AddVisitor: React.FC = () => {
       return;
     }
     try {
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         first_name: form.firstName,
         last_name: form.lastName || null,
         phone: form.phone || null,
@@ -53,18 +84,10 @@ const AddVisitor: React.FC = () => {
         address: form.address || null,
         date_of_birth: form.dateOfBirth || null,
       };
-      if (editingId) {
-        const { error: updErr } = await supabase.from('visitors').update(payload).eq('id', editingId);
-        if (updErr) throw updErr;
-        setMessage('Visitor updated');
-      } else {
-        const { error: insErr } = await supabase.from('visitors').insert(payload).single();
-        if (insErr) throw insErr;
-        setMessage('Visitor saved');
-      }
+      await saveMutation.mutateAsync({ editingId, payload });
+      setMessage(editingId ? 'Visitor updated' : 'Visitor saved');
       setForm({ firstName: '', lastName: '', phone: '', email: '', address: '', dateOfBirth: '' });
       setEditingId(null);
-      load();
     } catch (err: any) {
       setError(err.message || 'Failed to save visitor');
     } finally {
@@ -98,14 +121,13 @@ const AddVisitor: React.FC = () => {
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
     setError(null);
-    const { error } = await supabase.from('visitors').delete().in('id', selectedIds);
-    if (error) {
-      setError(error.message);
-      return;
+    try {
+      await deleteMutation.mutateAsync(selectedIds);
+      setSelectedIds([]);
+      setMessage('Deleted successfully');
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
     }
-    setSelectedIds([]);
-    setMessage('Deleted successfully');
-    load();
   };
 
   return (
@@ -231,7 +253,3 @@ const AddVisitor: React.FC = () => {
 };
 
 export default AddVisitor;
-
-
-
-

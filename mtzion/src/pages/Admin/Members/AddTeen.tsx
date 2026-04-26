@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 
 type ChildRow = {
   id: string;
@@ -13,6 +15,7 @@ type ChildRow = {
 };
 
 const AddTeen: React.FC = () => {
+  const queryClient = useQueryClient();
   const toDisplay = (value: any): string => {
     if (Array.isArray(value)) return value.filter(Boolean).join(', ');
     if (value === null || value === undefined) return '';
@@ -60,6 +63,7 @@ const AddTeen: React.FC = () => {
     }
     return String(value);
   };
+
   const [form, setForm] = useState({
     firstName: '',
     surname: '',
@@ -71,36 +75,17 @@ const AddTeen: React.FC = () => {
     parentsName: '',
     mobile: '',
   });
-  const [children, setChildren] = useState<ChildRow[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadChildren();
-    
-    // Subscribe to real-time changes
-    const channel = supabase
-      .channel('teens-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teens' }, () => {
-        loadChildren();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const loadChildren = async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const { data: children = [], isPending: listLoading } = useQuery({
+    queryKey: queryKeys.members.teensDetails(),
+    queryFn: async () => {
       const { data: childrenData, error: childError } = await supabase
         .from('teens')
         .select('id, first_name, middle_name, last_name, gender, date_of_birth, address, place_of_birth, parent_name, mobile');
       if (childError) throw childError;
-      const mapped: ChildRow[] = (childrenData || []).map((c: any) => ({
+      return (childrenData || []).map((c: any) => ({
         id: c.id,
         name: [toDisplay(c.first_name), toDisplay(c.middle_name), toDisplay(c.last_name)]
           .filter(Boolean)
@@ -111,52 +96,32 @@ const AddTeen: React.FC = () => {
         parent: toDisplay(c.parent_name),
         mobile: toDisplay(c.mobile),
         residence: toDisplay(c.address),
-      }));
-      setChildren(mapped);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load children');
-    } finally {
-      setLoading(false);
-    }
-  };
+      })) as ChildRow[];
+    },
+  });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
+  useEffect(() => {
+    const channel = supabase
+      .channel('teens-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teens' }, () => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.members.teensDetails() });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.addTeen.teens() });
+      })
+      .subscribe();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
-    try {
-      // Validate required fields
-      if (!form.firstName || !form.lastName || !form.gender || !form.birthday) {
-        throw new Error('Please fill in all required fields (First Name, Last Name, Gender, Birthday)');
-      }
-
-      // Insert directly into teens table using updated schema
-      const teenPayload: any = {
-        first_name: form.firstName,
-        last_name: form.lastName,
-        middle_name: form.surname || null,
-        gender: form.gender,
-        date_of_birth: form.birthday,
-        address: form.residence || null,
-        place_of_birth: form.placeOfBirth || null,
-        parent_name: form.parentsName || null,
-        mobile: form.mobile || null,
-      };
-
+  const registerMutation = useMutation({
+    mutationFn: async (teenPayload: Record<string, unknown>) => {
       let { data: teenData, error: teenError } = await supabase
         .from('teens')
         .insert(teenPayload)
         .select('id')
         .single();
 
-      // If schema has array-typed columns, retry by wrapping strings in single-element arrays
       if (teenError && (teenError.message || '').toLowerCase().includes('malformed array literal')) {
         const arrayWrapped: any = { ...teenPayload };
         const maybeArrayKeys = ['first_name', 'middle_name', 'last_name', 'address', 'place_of_birth', 'parent_name', 'mobile'];
@@ -174,8 +139,44 @@ const AddTeen: React.FC = () => {
       }
 
       if (teenError) throw teenError;
+      return teenData;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.members.teensDetails() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.addTeen.teens() });
+    },
+  });
 
-      // Reset form
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    try {
+      // Validate required fields
+      if (!form.firstName || !form.lastName || !form.gender || !form.birthday) {
+        throw new Error('Please fill in all required fields (First Name, Last Name, Gender, Birthday)');
+      }
+
+      const teenPayload: any = {
+        first_name: form.firstName,
+        last_name: form.lastName,
+        middle_name: form.surname || null,
+        gender: form.gender,
+        date_of_birth: form.birthday,
+        address: form.residence || null,
+        place_of_birth: form.placeOfBirth || null,
+        parent_name: form.parentsName || null,
+        mobile: form.mobile || null,
+      };
+
+      await registerMutation.mutateAsync(teenPayload);
+
       setForm({
         firstName: '',
         surname: '',
@@ -189,16 +190,12 @@ const AddTeen: React.FC = () => {
       });
 
       setSuccess('Child registered successfully!');
-      
-      // Reload children list
-      await loadChildren();
-
     } catch (err: any) {
       setError(err.message || 'Failed to register child');
-    } finally {
-      setLoading(false);
     }
   };
+
+  const loading = listLoading || registerMutation.isPending;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -265,7 +262,7 @@ const AddTeen: React.FC = () => {
           Children are independent records and do not have system login accounts.
         </p>
         
-        {loading && <div className="text-sm text-gray-600 mb-2">Loading...</div>}
+        {listLoading && <div className="text-sm text-gray-600 mb-2">Loading...</div>}
         {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
         
         {children.length === 0 ? (
@@ -295,5 +292,3 @@ const AddTeen: React.FC = () => {
 };
 
 export default AddTeen;
-
-

@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import sdaLogo from '../../../assets/sda-logo.png';
 
 type ChildRow = {
@@ -14,6 +16,7 @@ type ChildRow = {
 };
 
 const TeensDetails: React.FC = () => {
+  const queryClient = useQueryClient();
   const toDisplay = (value: any): string => {
     if (Array.isArray(value)) return value.filter(Boolean).join(', ');
     if (value === null || value === undefined) return '';
@@ -60,55 +63,59 @@ const TeensDetails: React.FC = () => {
     }
     return String(value);
   };
-  const [rows, setRows] = useState<ChildRow[]>([]);
-  const [query, setQuery] = useState('');
-  const [pageSize, setPageSize] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const { data: rows = [], isPending: loading, error: queryError } = useQuery({
+    queryKey: queryKeys.members.teensDetails(),
+    queryFn: async () => {
+      const { data: children, error: childError } = await supabase
+        .from('teens')
+        .select('id, first_name, middle_name, last_name, gender, date_of_birth, address, place_of_birth, parent_name, mobile');
+      if (childError) throw childError;
+      return (children || []).map((c: any) => ({
+        id: c.id,
+        name: [toDisplay(c.first_name), toDisplay(c.middle_name), toDisplay(c.last_name)]
+          .filter(Boolean)
+          .join(' '),
+        gender: toDisplay(c.gender).replace(/^./, (char: string) => char.toUpperCase()),
+        placeOfBirth: toDisplay(c.place_of_birth),
+        birthday: toDisplay(c.date_of_birth),
+        parent: toDisplay(c.parent_name),
+        mobile: toDisplay(c.mobile),
+        residence: toDisplay(c.address),
+      })) as ChildRow[];
+    },
+  });
+  const error = queryError ? (queryError as Error).message : null;
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data: children, error: childError } = await supabase
-          .from('teens')
-          .select('id, first_name, middle_name, last_name, gender, date_of_birth, address, place_of_birth, parent_name, mobile');
-        if (childError) throw childError;
-        const mapped: ChildRow[] = (children || []).map((c: any) => ({
-          id: c.id,
-          name: [toDisplay(c.first_name), toDisplay(c.middle_name), toDisplay(c.last_name)]
-            .filter(Boolean)
-            .join(' '),
-          gender: toDisplay(c.gender).replace(/^./, (char: string) => char.toUpperCase()),
-          placeOfBirth: toDisplay(c.place_of_birth),
-          birthday: toDisplay(c.date_of_birth),
-          parent: toDisplay(c.parent_name),
-          mobile: toDisplay(c.mobile),
-          residence: toDisplay(c.address),
-        }));
-        setRows(mapped);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load children');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-    
-    // Subscribe to real-time changes
     const channel = supabase
       .channel('teens-details-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'teens' }, () => {
-        load();
+        void queryClient.invalidateQueries({ queryKey: queryKeys.members.teensDetails() });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.addTeen.teens() });
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [queryClient]);
+
+  const [query, setQuery] = useState('');
+  const [pageSize, setPageSize] = useState(10);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error: delError } = await supabase.from('teens').delete().in('id', ids);
+      if (delError) throw delError;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.members.teensDetails() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.addTeen.teens() });
+    },
+  });
 
   const data = useMemo(() => {
     if (!query.trim()) return rows;
@@ -134,18 +141,16 @@ const TeensDetails: React.FC = () => {
     if (selectedIds.size === 0) return;
     const ok = window.confirm('Delete selected children? This cannot be undone.');
     if (!ok) return;
+    setActionError(null);
     try {
-      setLoading(true);
-      const { error: delError } = await supabase.from('teens').delete().in('id', Array.from(selectedIds));
-      if (delError) throw delError;
-      setRows((prev) => prev.filter((r) => !selectedIds.has(r.id)));
+      await deleteMutation.mutateAsync(Array.from(selectedIds));
       setSelectedIds(new Set());
     } catch (err: any) {
-      setError(err.message || 'Failed to delete');
-    } finally {
-      setLoading(false);
+      setActionError(err.message || 'Failed to delete');
     }
   };
+
+  const busy = loading || deleteMutation.isPending;
 
   return (
     <div className="p-4">
@@ -159,7 +164,7 @@ const TeensDetails: React.FC = () => {
         </div>
 
         <div className="px-4 py-3 flex items-center gap-3 hide-on-print">
-          <button onClick={handleDelete} disabled={selectedIds.size === 0 || loading} className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">Delete</button>
+          <button onClick={handleDelete} disabled={selectedIds.size === 0 || busy} className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">Delete</button>
           <div className="ml-auto flex items-center gap-2">
             <label className="text-sm text-gray-600">Search:</label>
             <input value={query} onChange={(e) => setQuery(e.target.value)} className="border rounded px-2 py-1" />
@@ -172,7 +177,7 @@ const TeensDetails: React.FC = () => {
             <img src={sdaLogo} alt="SDA Logo" className="w-10 h-10 object-contain mr-3" />
             <h2 className="text-lg font-semibold">Seventh-Day Adventist Church, Mt. Zion - Kigoma - Church Children List</h2>
           </div>
-        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+        {(error || actionError) && <div className="text-red-600 text-sm mb-2">{error || actionError}</div>}
         {loading && <div className="text-sm text-gray-600 mb-2">Loading...</div>}
           <table className="w-full text-sm border border-gray-200 print-table">
           <thead className="bg-gray-50">
@@ -209,5 +214,3 @@ const TeensDetails: React.FC = () => {
 };
 
 export default TeensDetails;
-
-

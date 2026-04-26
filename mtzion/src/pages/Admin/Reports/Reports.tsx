@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -33,23 +35,13 @@ type KPI = {
 const Reports: React.FC = () => {
   const [from, setFrom] = useState<string>('');
   const [to, setTo] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [kpi, setKpi] = useState<KPI | null>(null);
   const [tab, setTab] = useState<'summary' | 'members' | 'attendance' | 'offertory' | 'visitors' | 'ministries'>('summary');
-  const [membersList, setMembersList] = useState<any[]>([]);
-  const [attendanceList, setAttendanceList] = useState<any[]>([]);
-  const [visitorsList, setVisitorsList] = useState<any[]>([]);
-  const [ministriesList, setMinistriesList] = useState<any[]>([]);
-  const [ministriesWithMembers, setMinistriesWithMembers] = useState<any[]>([]);
-  const [offeringsList, setOfferingsList] = useState<any[]>([]);
-  const [sabbathOfferings, setSabbathOfferings] = useState<any[]>([]);
-  const [sabbathVisitors, setSabbathVisitors] = useState<any[]>([]);
+  const rangeKey = `${from}|${to}`;
+  const queryClient = useQueryClient();
 
-  const fetchKpi = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const { data, isPending: loading, isError, error: queryError } = useQuery({
+    queryKey: queryKeys.admin.reports(rangeKey),
+    queryFn: async () => {
       const start = from ? new Date(from).toISOString() : new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
       const end = to ? new Date(new Date(to).getTime() + 86400000 - 1).toISOString() : new Date().toISOString();
 
@@ -69,15 +61,14 @@ const Reports: React.FC = () => {
 
       const sum = (arr: any[] | null | undefined) => (arr || []).reduce((s, a: any) => s + Number(a.total || 0), 0);
 
-      setKpi({
+      const kpi: KPI = {
         members: membersCount || 0,
         activeMembers: activeCount || 0,
         visitorsThisMonth: visitorsCount || 0,
         offeringsThisMonth: sum(offertoryData),
         attendanceThisMonth: attendanceCount || 0,
-      });
+      };
 
-      // Also prefetch lists for tabs
       const [membersRows, attendanceRows, visitorRows, ministryRows, offeringsRows, sabbathOfferingsRows, ministriesWithMembersRows, sabbathVisitorsRows] = await Promise.all([
         supabase.from('members').select('id, first_name, last_name, status, created_at').order('created_at', { ascending: false }).limit(25),
         supabase.from('attendance').select('id, attendance_date').order('attendance_date', { ascending: false }).limit(25),
@@ -94,54 +85,64 @@ const Reports: React.FC = () => {
         supabase.from('visitors').select('visit_date').gte('visit_date', start).lte('visit_date', end).order('visit_date', { ascending: true })
       ]);
 
-      setMembersList(membersRows.data || []);
-      setAttendanceList(attendanceRows.data || []);
-      setVisitorsList(visitorRows.data || []);
-      
       // Debug ministries data
       console.log('Ministries query result:', ministryRows);
       console.log('Ministries data:', ministryRows.data);
       console.log('Ministries error:', ministryRows.error);
-      
-      setMinistriesList(ministryRows.data || []);
-      setOfferingsList(offeringsRows.data || []);
-      setSabbathOfferings(sabbathOfferingsRows.data || []);
-      setSabbathVisitors(sabbathVisitorsRows.data || []);
-      
-      // Process ministries with member counts and sort by member count (highest to lowest)
-      const processedMinistries = (ministriesWithMembersRows.data || []).map(ministry => ({
+
+      const membersList = membersRows.data || [];
+      const attendanceList = attendanceRows.data || [];
+      const visitorsList = visitorRows.data || [];
+      const ministriesList = ministryRows.data || [];
+      const offeringsList = offeringsRows.data || [];
+      const sabbathOfferings = sabbathOfferingsRows.data || [];
+      const sabbathVisitors = sabbathVisitorsRows.data || [];
+      const processedMinistries = (ministriesWithMembersRows.data || []).map((ministry: any) => ({
         ...ministry,
         memberCount: ministry.member_ministries?.[0]?.count || 0
       })).sort((a, b) => b.memberCount - a.memberCount);
-      
-      setMinistriesWithMembers(processedMinistries);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load reports');
-    } finally {
-      setLoading(false);
-    }
-  }, [from, to]);
+      const ministriesWithMembers = processedMinistries;
+      return {
+        kpi,
+        membersList,
+        attendanceList,
+        visitorsList,
+        ministriesList,
+        ministriesWithMembers,
+        offeringsList,
+        sabbathOfferings,
+        sabbathVisitors,
+      };
+    },
+  });
+
+  const kpi = data?.kpi ?? null;
+  const membersList = data?.membersList ?? [];
+  const attendanceList = data?.attendanceList ?? [];
+  const visitorsList = data?.visitorsList ?? [];
+  const ministriesList = data?.ministriesList ?? [];
+  const sabbathOfferings = data?.sabbathOfferings ?? [];
+  const sabbathVisitors = data?.sabbathVisitors ?? [];
+  const error = isError && queryError ? (queryError as Error).message : null;
 
   useEffect(() => {
-    fetchKpi();
-  }, [fetchKpi]);
-
-  useEffect(() => {
-    // Realtime subscriptions; refresh on CRUD events
+    const inv = () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'reports'] });
+    };
     const channel = supabase
       .channel('reports_rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, fetchKpi)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'visitors' }, fetchKpi)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tithes' }, fetchKpi)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'offerings' }, fetchKpi)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, fetchKpi)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ministries' }, fetchKpi)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, inv)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'visitors' }, inv)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tithes' }, inv)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offerings' }, inv)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, inv)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ministries' }, inv)
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchKpi]);
+  }, [queryClient]);
 
   const currency = (n: number) => new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', maximumFractionDigits: 0 }).format(n || 0);
 

@@ -1,40 +1,41 @@
 import React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import sdaLogo from '../../../assets/sda-logo.png';
 
+const VISITORS_LIMIT = 500;
+
 const VisitorsDetails: React.FC = () => {
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handlePrint = () => window.print();
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    const { data, error } = await supabase
-      .from('visitors')
-      .select('id, first_name, last_name, phone, email, address, date_of_birth, created_at')
-      .order('created_at', { ascending: false })
-      .limit(500);
-    if (error) setError(error.message);
-    setRows(data || []);
-    setLoading(false);
-  };
+  const queryClient = useQueryClient();
+  const { data: rows = [], isPending: loading, error: queryError } = useQuery({
+    queryKey: queryKeys.visitors.list(VISITORS_LIMIT),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('visitors')
+        .select('id, first_name, last_name, phone, email, address, date_of_birth, created_at')
+        .order('created_at', { ascending: false })
+        .limit(VISITORS_LIMIT);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+  const error = queryError ? (queryError as Error).message : null;
 
   useEffect(() => {
-    load();
     const channel = supabase
       .channel('visitors-details')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'visitors' }, () => {
-        load();
+        void queryClient.invalidateQueries({ queryKey: ['visitors'] });
       })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [queryClient]);
+
+  const handlePrint = () => window.print();
 
   return (
     <div className="p-4">
@@ -116,7 +117,3 @@ const VisitorsDetails: React.FC = () => {
 };
 
 export default VisitorsDetails;
-
-
-
-

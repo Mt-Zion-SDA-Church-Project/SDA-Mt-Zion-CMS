@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import { 
   Users, 
   Calendar, 
@@ -128,61 +130,22 @@ function resolveExportEventLabel(
 }
 
 const AttendanceManager: React.FC = () => {
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [eventAttendance, setEventAttendance] = useState<EventAttendance[]>([]);
+  const queryClient = useQueryClient();
   const [selectedEvent, setSelectedEvent] = useState<string>('all');
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEventDetails, setSelectedEventDetails] = useState<EventAttendance | null>(null);
-  const [stats, setStats] = useState<AttendanceStats>({
-    totalAttendees: 0,
-    qrScannedCount: 0,
-    manualCheckInCount: 0,
-    todayAttendees: 0,
-    thisWeekAttendees: 0,
-    thisMonthAttendees: 0,
-    attendanceRate: 0,
-    multiMemberCount: 0,
-    totalIndividualMembers: 0,
-    averageWeeklyAttendance: 0,
-    growthRate: 0
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterDate, setFilterDate] = useState<string>('all');
-  const [trendData, setTrendData] = useState<any[]>([]);
-  const [typeDistribution, setTypeDistribution] = useState<any[]>([]);
 
-  // Colors for charts
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+  const filtersKey = useMemo(
+    () => JSON.stringify({ filterType, filterDate, selectedEvent }),
+    [filterType, filterDate, selectedEvent]
+  );
 
-  // Real-time subscription
-  useEffect(() => {
-    loadAttendanceData();
-    
-    // Subscribe to real-time changes
-    const channel = supabase
-      .channel('attendance-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance' },
-        (payload) => {
-          console.log('Real-time update:', payload);
-          loadAttendanceData(); // Refresh data on any change
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [filterType, filterDate, selectedEvent]);
-
-  const loadAttendanceData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const { data: attendanceRecords = [], isPending: loading, error: recordsError, refetch: refetchAttendance } = useQuery({
+    queryKey: queryKeys.attendance.manager(filtersKey),
+    queryFn: async () => {
       let query = supabase
         .from('attendance')
         .select(`
@@ -209,53 +172,48 @@ const AttendanceManager: React.FC = () => {
         `)
         .order('check_in_time', { ascending: false });
 
-      if (filterType !== 'all') {
-        query = query.eq('attendance_type', filterType);
+      const { filterType: ft, filterDate: fd, selectedEvent: se } = JSON.parse(filtersKey) as {
+        filterType: string;
+        filterDate: string;
+        selectedEvent: string;
+      };
+
+      if (ft !== 'all') {
+        query = query.eq('attendance_type', ft);
       }
 
-      if (selectedEvent !== 'all') {
-        query = query.eq('event_id', selectedEvent);
+      if (se !== 'all') {
+        query = query.eq('event_id', se);
       }
 
-      if (filterDate !== 'all') {
+      if (fd !== 'all') {
         const now = new Date();
-        if (filterDate === 'today') {
+        if (fd === 'today') {
           const today = now.toISOString().split('T')[0];
           query = query.eq('attendance_date', today);
-        } else if (filterDate === 'week') {
+        } else if (fd === 'week') {
           const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
           query = query.gte('attendance_date', weekAgo.toISOString().split('T')[0]);
-        } else if (filterDate === 'month') {
+        } else if (fd === 'month') {
           const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
           query = query.gte('attendance_date', monthAgo.toISOString().split('T')[0]);
         }
       }
 
       const { data, error: fetchError } = await query;
-      
       if (fetchError) throw fetchError;
 
-      const transformedData = (data || []).map((record: any) => ({
+      return (data || []).map((record: any) => ({
         ...record,
         member: unwrapEmbedded(record.member),
         event: unwrapEmbedded(record.event),
-      }));
+      })) as AttendanceRecord[];
+    },
+  });
 
-      setAttendanceRecords(transformedData);
-      await calculateStats(transformedData);
-      calculateTrendData(transformedData);
-      calculateTypeDistribution(transformedData);
-      await loadEventAttendance();
-
-    } catch (err: any) {
-      setError(err.message || 'Failed to load attendance data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadEventAttendance = async () => {
-    try {
+  const { data: eventAttendance = [], refetch: refetchEventSummary } = useQuery({
+    queryKey: queryKeys.attendance.eventSummary(),
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('attendance')
         .select(`
@@ -291,27 +249,36 @@ const AttendanceManager: React.FC = () => {
         }
       });
 
-      setEventAttendance(Array.from(eventMap.values()).sort((a, b) => b.count - a.count));
-    } catch (err) {
-      console.error('Failed to load event attendance:', err);
-    }
-  };
+      return Array.from(eventMap.values()).sort((a, b) => b.count - a.count);
+    },
+  });
 
-  const calculateStats = async (data: AttendanceRecord[]) => {
+  const { data: activeMembersCount = 1, refetch: refetchActiveMembers } = useQuery({
+    queryKey: queryKeys.members.activeCount(),
+    queryFn: async () => {
+      const { data: membersData } = await supabase
+        .from('members')
+        .select('id')
+        .eq('status', 'active');
+      return membersData?.length || 1;
+    },
+  });
+
+  const stats: AttendanceStats = useMemo(() => {
+    const data = attendanceRecords;
     const totalAttendees = data.length;
     const qrScannedCount = data.filter(r => r.qr_scanned).length;
     const manualCheckInCount = totalAttendees - qrScannedCount;
-    
+
     const today = new Date().toISOString().split('T')[0];
     const todayAttendees = data.filter(r => r.attendance_date === today).length;
-    
+
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const thisWeekAttendees = data.filter(r => r.attendance_date >= weekAgo).length;
-    
+
     const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const thisMonthAttendees = data.filter(r => r.attendance_date >= monthAgo).length;
 
-    // Calculate average weekly attendance (last 4 weeks)
     const weeklyData = [];
     for (let i = 0; i < 4; i++) {
       const weekStart = new Date(Date.now() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
@@ -323,21 +290,15 @@ const AttendanceManager: React.FC = () => {
       weeklyData.push(weekCount);
     }
     const averageWeeklyAttendance = Math.round(weeklyData.reduce((a, b) => a + b, 0) / 4) || 0;
-    
-    // Calculate growth rate (compare last 2 weeks)
+
     const lastWeek = weeklyData[0] || 0;
     const prevWeek = weeklyData[1] || 0;
     const growthRate = prevWeek > 0 ? Math.round(((lastWeek - prevWeek) / prevWeek) * 100) : 0;
 
-    const { data: membersData } = await supabase
-      .from('members')
-      .select('id')
-      .eq('status', 'active');
-    
-    const totalMembers = membersData?.length || 1;
+    const totalMembers = activeMembersCount || 1;
     const attendanceRate = Math.round((thisWeekAttendees / totalMembers) * 100);
 
-    setStats({
+    return {
       totalAttendees,
       qrScannedCount,
       manualCheckInCount,
@@ -349,15 +310,16 @@ const AttendanceManager: React.FC = () => {
       totalIndividualMembers: totalAttendees,
       averageWeeklyAttendance,
       growthRate
-    });
-  };
+    };
+  }, [attendanceRecords, activeMembersCount]);
 
-  const calculateTrendData = (data: AttendanceRecord[]) => {
+  const trendData = useMemo(() => {
+    const data = attendanceRecords;
     const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const filtered = data.filter(r => new Date(r.attendance_date) >= last30Days);
-    
+
     const dailyMap = new Map<string, { date: string; count: number; qr: number }>();
-    
+
     filtered.forEach(record => {
       const date = record.attendance_date;
       if (!dailyMap.has(date)) {
@@ -367,28 +329,48 @@ const AttendanceManager: React.FC = () => {
       entry.count++;
       if (record.qr_scanned) entry.qr++;
     });
-    
-    const trendArray = Array.from(dailyMap.values())
+
+    return Array.from(dailyMap.values())
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map(d => ({ ...d, date: new Date(d.date).toLocaleDateString() }));
-    
-    setTrendData(trendArray);
-  };
+  }, [attendanceRecords]);
 
-  const calculateTypeDistribution = (data: AttendanceRecord[]) => {
+  const typeDistribution = useMemo(() => {
+    const data = attendanceRecords;
     const typeMap = new Map<string, number>();
     data.forEach(record => {
       const type = record.attendance_type;
       typeMap.set(type, (typeMap.get(type) || 0) + 1);
     });
-    
-    const distribution = Array.from(typeMap.entries()).map(([name, value]) => ({
+
+    return Array.from(typeMap.entries()).map(([name, value]) => ({
       name: name.replace('_', ' ').toUpperCase(),
       value
     }));
-    
-    setTypeDistribution(distribution);
-  };
+  }, [attendanceRecords]);
+
+  const error = recordsError ? (recordsError as Error).message : null;
+
+  // Colors for charts
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('attendance-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance' },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ['attendance'] });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.members.activeCount() });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const exportAttendanceCSV = () => {
     const headers = [
@@ -473,7 +455,7 @@ const AttendanceManager: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => loadAttendanceData()} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+          <button onClick={() => { void refetchAttendance(); void refetchEventSummary(); void refetchActiveMembers(); }} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>

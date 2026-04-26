@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import { getAuthEmailRedirectUrl } from '../../../lib/authRedirect';
 import { UserPlus, Trash2, Edit3, Shield, Mail } from 'lucide-react';
 import { sendCredentialsEmail } from '../../../lib/emailService';
@@ -13,6 +15,7 @@ type SystemUserRow = {
 };
 
 const AddSystemUser: React.FC = () => {
+  const queryClient = useQueryClient();
   const [form, setForm] = useState({ 
     username: '', 
     fullName: '', 
@@ -20,41 +23,32 @@ const AddSystemUser: React.FC = () => {
     role: 'admin', 
     password: '' 
   });
-  const [users, setUsers] = useState<SystemUserRow[]>([]);
   const [query, setQuery] = useState('');
   const [pageSize, setPageSize] = useState(10);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase
-          .from('system_users')
-          .select('id, full_name, role, username, email')
-          .order('full_name', { ascending: true });
-        if (err) throw err;
-        setUsers((data || []).map((u: any) => ({ 
-          id: u.id, 
-          name: u.full_name, 
-          username: u.username || u.role,
-          email: u.email,
-          role: u.role
-        })));
-      } catch (e: any) {
-        // If the table or columns differ, keep UI functional without data
-        setError(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
+  const { data: users = [], isPending: loading } = useQuery({
+    queryKey: queryKeys.systemUsers.forAddUser(),
+    queryFn: async () => {
+      const { data, error: err } = await supabase
+        .from('system_users')
+        .select('id, full_name, role, username, email')
+        .order('full_name', { ascending: true });
+      if (err) throw err;
+      return (data || []).map((u: any) => ({ 
+        id: u.id, 
+        name: u.full_name, 
+        username: u.username || u.role,
+        email: u.email,
+        role: u.role
+      })) as SystemUserRow[];
+    },
+    retry: false,
+    throwOnError: false,
+  });
 
   const filtered = useMemo(() => {
     if (!query.trim()) return users;
@@ -62,19 +56,8 @@ const AddSystemUser: React.FC = () => {
     return users.filter((u) => [u.name, u.username].join(' ').toLowerCase().includes(q));
   }, [users, query]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-    
-    try {
-      // First, create the auth user with email and password
+  const createMutation = useMutation({
+    mutationFn: async () => {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
@@ -86,10 +69,7 @@ const AddSystemUser: React.FC = () => {
           }
         }
       });
-
       if (authError) throw authError;
-
-      // Then create the system user record
       const { data, error: insErr } = await supabase
         .from('system_users')
         .insert({ 
@@ -101,16 +81,41 @@ const AddSystemUser: React.FC = () => {
         })
         .select('id, full_name, role, username')
         .single();
-      
       if (insErr) throw insErr;
-      
-      setUsers((prev) => [{ id: data!.id, name: data!.full_name, username: data!.username }, ...prev]);
+      return data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.forAddUser() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.manage() });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error: delErr } = await supabase.from('system_users').delete().in('id', ids);
+      if (delErr) throw delErr;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.forAddUser() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.manage() });
+    },
+  });
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    try {
+      await createMutation.mutateAsync();
       setForm({ username: '', fullName: '', email: '', role: 'admin', password: '' });
       setSuccess('System user created successfully');
     } catch (err: any) {
       setError(err.message || 'Failed to create system user');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -131,15 +136,11 @@ const AddSystemUser: React.FC = () => {
     const ok = window.confirm('Delete selected system user(s)?');
     if (!ok) return;
     try {
-      setLoading(true);
-      const { error: delErr } = await supabase.from('system_users').delete().in('id', Array.from(selected));
-      if (delErr) throw delErr;
+      await deleteMutation.mutateAsync(Array.from(selected));
     } catch (_) {
       // If delete fails, still remove locally to keep UX fluid
     } finally {
-      setUsers((prev) => prev.filter((u) => !selected.has(u.id)));
       setSelected(new Set());
-      setLoading(false);
     }
   };
 
@@ -161,6 +162,8 @@ const AddSystemUser: React.FC = () => {
       setSendingEmail(null);
     }
   };
+
+  const saving = createMutation.isPending || deleteMutation.isPending;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -222,7 +225,7 @@ const AddSystemUser: React.FC = () => {
           </div>
           {error && <div className="text-sm text-red-600">{error}</div>}
           {success && <div className="text-sm text-green-600">{success}</div>}
-          <button type="submit" disabled={loading} className="inline-flex items-center gap-2 px-3 py-2 bg-primary text-white rounded hover:opacity-90 disabled:opacity-60">
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 px-3 py-2 bg-primary text-white rounded hover:opacity-90 disabled:opacity-60">
             <Shield className="w-4 h-4" />
             <span>Save</span>
           </button>
@@ -240,7 +243,7 @@ const AddSystemUser: React.FC = () => {
 
         <div className="p-4 space-y-3">
           <div className="flex items-center gap-3">
-            <button onClick={handleDelete} disabled={selected.size === 0 || loading} className="inline-flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">
+            <button onClick={handleDelete} disabled={selected.size === 0 || saving} className="inline-flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">
               <Trash2 className="w-4 h-4" />
               <span>Delete</span>
             </button>
@@ -268,7 +271,7 @@ const AddSystemUser: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, pageSize).map((u) => (
+              {loading ? null : filtered.slice(0, pageSize).map((u) => (
                 <tr key={u.id} className="odd:bg-white even:bg-gray-50">
                   <td className="p-2 border-b"><input type="checkbox" checked={selected.has(u.id)} onChange={(e) => toggleOne(u.id, e.target.checked)} /></td>
                   <td className="p-2 border-b">{u.name}</td>
@@ -306,6 +309,3 @@ const AddSystemUser: React.FC = () => {
 };
 
 export default AddSystemUser;
-
-
-

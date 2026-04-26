@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 import mtnLogo from '../../assets/mtn.png';
 import airtelLogo from '../../assets/airtel.png';
 import cardLogo from '../../assets/visa-mastercard.png';
@@ -7,17 +9,14 @@ import paypalLogo from '../../assets/paypal.png';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 type KnownKey =
-  // Trust Fund
   | 'tithe_10_percent'
   | 'camp_meeting_offering'
   | '13th_sabbath'
   | 'prime_radio'
   | 'kireka_adventist_church'
-  // Combined Offerings
   | 'sabbath_school'
   | 'thanks_giving'
   | 'devine'
-  // Other Offerings
   | 'local_church_building'
   | 'district_project_fund'
   | 'lunch'
@@ -26,17 +25,14 @@ type KnownKey =
   | 'nbf_development_fund';
 
 const KNOWN_LABELS: Record<KnownKey, string> = {
-  // Trust Fund
   tithe_10_percent: 'Tithe (10%)',
   camp_meeting_offering: 'Camp Meeting Offering',
   '13th_sabbath': '13th Sabbath',
   prime_radio: 'Prime Radio',
   kireka_adventist_church: 'Kireka Adventist Church',
-  // Combined Offerings
   sabbath_school: 'Sabbath School',
   thanks_giving: 'Thanks Giving',
   devine: 'Devine',
-  // Other Offerings
   local_church_building: 'Local Church Building',
   district_project_fund: 'District Project Fund',
   lunch: 'Lunch',
@@ -51,43 +47,89 @@ function formatUGX(n: number) {
   return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', maximumFractionDigits: 0 }).format(n || 0);
 }
 
+function rowsFromCategories(data: { key: string; label: string }[] | undefined | null): Row[] {
+  const initial: Row[] = (data || []).map((c) => ({ id: crypto.randomUUID(), label: c.label, amount: '', key: c.key as KnownKey }));
+  if (initial.length === 0) {
+    return (Object.keys(KNOWN_LABELS) as KnownKey[]).map((k) => ({
+      id: crypto.randomUUID(),
+      label: KNOWN_LABELS[k],
+      amount: '',
+      key: k,
+    }));
+  }
+  return initial;
+}
+
+async function fetchOffertoryCategories(): Promise<{ key: string; label: string }[]> {
+  const { data, error } = await supabase.from('offertory_categories').select('key, label, is_active').eq('is_active', true).order('label');
+  if (error) throw error;
+  return (data as { key: string; label: string }[]) || [];
+}
+
 const GiveOffertory: React.FC = () => {
+  const queryClient = useQueryClient();
   const [rows, setRows] = useState<Row[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [payMethod, setPayMethod] = useState<'mtn' | 'airtel' | 'card' | 'paypal'>('mtn');
-  const [processing, setProcessing] = useState(false);
 
-  const total = useMemo(() => rows.reduce((s, r) => s + (Number.isFinite(Math.floor(Number(r.amount))) ? Math.max(0, Math.floor(Number(r.amount))) : 0), 0), [rows]);
+  const categoriesQuery = useQuery({
+    queryKey: queryKeys.memberPortal.offertoryCategories(),
+    queryFn: fetchOffertoryCategories,
+  });
 
-  // Load categories from DB
   useEffect(() => {
-    const load = async () => {
-      const { data, error } = await supabase
-        .from('offertory_categories')
-        .select('key, label, is_active')
-        .eq('is_active', true)
-        .order('label');
-      if (!error) {
-        const initial: Row[] = (data || []).map((c: any) => ({ id: crypto.randomUUID(), label: c.label, amount: '', key: c.key }));
-        // Fallback: if no categories exist yet, seed UI with known defaults (read-only)
-        if (initial.length === 0) {
-          const defaults: Row[] = (Object.keys(KNOWN_LABELS) as KnownKey[]).map((k) => ({ id: crypto.randomUUID(), label: KNOWN_LABELS[k], amount: '', key: k }));
-          setRows(defaults);
-        } else {
-          setRows(initial);
-        }
-      }
-    };
-    load();
+    if (!categoriesQuery.data) return;
+    setRows(rowsFromCategories(categoriesQuery.data));
+  }, [categoriesQuery.data]);
 
+  useEffect(() => {
     const channel = supabase
       .channel('member-offertory-categories')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'offertory_categories' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offertory_categories' }, () => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.offertoryCategories() });
+      })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
-  const handleRemove = (id: string) => setRows((prev) => prev.filter((r) => r.id !== id));
+  const payMutation = useMutation({
+    mutationFn: async (vars: { total: number; categories: { key: string; label: string; amount: number }[]; payMethod: string; notes: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      let memberId: string | null = null;
+      if (user) {
+        const { data: m } = await supabase.from('members').select('id').eq('user_id', user.id).single();
+        memberId = m?.id || null;
+      }
+      const { data, error } = await supabase
+        .from('offertory_payments')
+        .insert({
+          member_id: memberId,
+          amount_ugx: vars.total,
+          currency: 'UGX',
+          method: vars.payMethod,
+          categories: vars.categories,
+          notes: vars.notes,
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+      return data.id as string;
+    },
+    onSuccess: (paymentId) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.dashboardMe() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.offertoryPayment(paymentId) });
+      window.location.assign(`/member/offertory/receipt/${paymentId}`);
+    },
+  });
+
+  const processing = payMutation.isPending;
+
+  const total = useMemo(
+    () => rows.reduce((s, r) => s + (Number.isFinite(Math.floor(Number(r.amount))) ? Math.max(0, Math.floor(Number(r.amount))) : 0), 0),
+    [rows]
+  );
 
   const handleChange = (id: string, field: 'label' | 'amount', value: string) => {
     setRows((prev) =>
@@ -100,49 +142,15 @@ const GiveOffertory: React.FC = () => {
     setNotes('');
   };
 
-  const handlePay = async () => {
+  const handlePay = () => {
     if (total <= 0) {
       alert('Please enter at least one amount before paying.');
       return;
     }
-    setProcessing(true);
-    try {
-      // Demo: Auto-generate receipt immediately when Pay is clicked
-      const categories = rows
-        .filter((r) => (Number(r.amount) || 0) > 0)
-        .map((r) => ({ key: r.key || 'custom', label: r.label, amount: Math.floor(Number(r.amount)) }));
-
-      // Get current member id
-      const { data: { user } } = await supabase.auth.getUser();
-      let memberId: string | null = null;
-      if (user) {
-        const { data: m } = await supabase
-          .from('members')
-          .select('id')
-          .eq('user_id', user.id)
-          .single();
-        memberId = m?.id || null;
-      }
-
-      const { data, error } = await supabase
-        .from('offertory_payments')
-        .insert({
-          member_id: memberId,
-          amount_ugx: total,
-          currency: 'UGX',
-          method: payMethod,
-          categories,
-          notes
-        })
-        .select('id')
-        .single();
-      if (error) throw error;
-
-      // Navigate to printable receipt
-      window.location.assign(`/member/offertory/receipt/${data.id}`);
-    } finally {
-      setProcessing(false);
-    }
+    const categories = rows
+      .filter((r) => (Number(r.amount) || 0) > 0)
+      .map((r) => ({ key: r.key || 'custom', label: r.label, amount: Math.floor(Number(r.amount)) }));
+    payMutation.mutate({ total, categories, payMethod, notes });
   };
 
   return (
@@ -156,7 +164,9 @@ const GiveOffertory: React.FC = () => {
               <div className="text-xs text-gray-600">Select categories, enter amounts, then pay below</div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={handleReset} className="px-3 py-2 border rounded text-sm">Reset</button>
+              <button onClick={handleReset} className="px-3 py-2 border rounded text-sm">
+                Reset
+              </button>
             </div>
           </div>
         </div>
@@ -186,7 +196,6 @@ const GiveOffertory: React.FC = () => {
                     />
                     <span className="text-xs text-gray-600 w-24 sm:w-28 text-right">{r.amount === '' ? '—' : formatUGX(Math.floor(Number(r.amount)))}</span>
                   </div>
-                  {/* Members cannot remove categories */}
                 </div>
               </div>
             ))}
@@ -211,19 +220,31 @@ const GiveOffertory: React.FC = () => {
             <div className="space-y-3">
               <div className="text-sm font-medium text-gray-700">Payment method</div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button onClick={() => setPayMethod('mtn')} className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'mtn' ? 'bg-yellow-50 border-yellow-400' : ''}`}>
+                <button
+                  onClick={() => setPayMethod('mtn')}
+                  className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'mtn' ? 'bg-yellow-50 border-yellow-400' : ''}`}
+                >
                   <img src={mtnLogo} alt="MTN MoMo" className="h-6 object-contain" />
                   <span className="text-xs">MTN MoMo</span>
                 </button>
-                <button onClick={() => setPayMethod('airtel')} className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'airtel' ? 'bg-red-50 border-red-400' : ''}`}>
+                <button
+                  onClick={() => setPayMethod('airtel')}
+                  className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'airtel' ? 'bg-red-50 border-red-400' : ''}`}
+                >
                   <img src={airtelLogo} alt="Airtel Money" className="h-6 object-contain" />
                   <span className="text-xs">Airtel Money</span>
                 </button>
-                <button onClick={() => setPayMethod('card')} className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'card' ? 'bg-blue-50 border-blue-400' : ''}`}>
+                <button
+                  onClick={() => setPayMethod('card')}
+                  className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'card' ? 'bg-blue-50 border-blue-400' : ''}`}
+                >
                   <img src={cardLogo} alt="Visa / Mastercard" className="h-6 object-contain" />
                   <span className="text-xs">Visa / Mastercard</span>
                 </button>
-                <button onClick={() => setPayMethod('paypal')} className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'paypal' ? 'bg-indigo-50 border-indigo-400' : ''}`}>
+                <button
+                  onClick={() => setPayMethod('paypal')}
+                  className={`p-2 border rounded text-sm flex flex-col items-center gap-1 ${payMethod === 'paypal' ? 'bg-indigo-50 border-indigo-400' : ''}`}
+                >
                   <img src={paypalLogo} alt="PayPal" className="h-6 object-contain" />
                   <span className="text-xs">PayPal</span>
                 </button>
@@ -233,7 +254,13 @@ const GiveOffertory: React.FC = () => {
           </div>
 
           <div className="mt-6 flex items-center justify-end gap-2">
-            <button onClick={handlePay} disabled={processing || total <= 0} className="px-4 py-2 bg-primary text-white rounded hover:opacity-90 text-sm disabled:opacity-60">{processing ? 'Processing…' : `Pay ${formatUGX(total)}`}</button>
+            <button
+              onClick={handlePay}
+              disabled={processing || total <= 0}
+              className="px-4 py-2 bg-primary text-white rounded hover:opacity-90 text-sm disabled:opacity-60"
+            >
+              {processing ? 'Processing…' : `Pay ${formatUGX(total)}`}
+            </button>
           </div>
         </div>
       </div>
@@ -242,5 +269,3 @@ const GiveOffertory: React.FC = () => {
 };
 
 export default GiveOffertory;
-
-

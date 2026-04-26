@@ -1,9 +1,12 @@
 import React from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import QRCodeGenerator from '../../../components/QRCodeGenerator';
 
 const AddEvent: React.FC = () => {
+  const queryClient = useQueryClient();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [eventDate, setEventDate] = useState('');
@@ -14,27 +17,49 @@ const AddEvent: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [events, setEvents] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showQRGenerator, setShowQRGenerator] = useState(false);
   const [selectedEventForQR, setSelectedEventForQR] = useState<any>(null);
 
-  const loadEvents = async () => {
-    const { data, error } = await supabase
-      .from('events')
-      .select('id, title, description, event_date, end_date, location, event_type')
-      .order('event_date', { ascending: true });
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    setEvents(data || []);
-  };
+  const { data: events = [] } = useQuery({
+    queryKey: queryKeys.events.list(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('events')
+        .select('id, title, description, event_date, end_date, location, event_type')
+        .order('event_date', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
-  useEffect(() => {
-    loadEvents();
-  }, []);
+  const saveMutation = useMutation({
+    mutationFn: async (vars: { editingId: string | null; payload: Record<string, unknown> }) => {
+      if (vars.editingId) {
+        const res = await supabase.from('events').update(vars.payload).eq('id', vars.editingId);
+        if (res.error) throw res.error;
+      } else {
+        const res = await supabase.from('events').insert(vars.payload).single();
+        if (res.error) throw res.error;
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.list() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.upcoming() });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('events').delete().in('id', ids);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.list() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.upcoming() });
+    },
+  });
 
   const handleSave = async () => {
     setError(null);
@@ -53,7 +78,7 @@ const AddEvent: React.FC = () => {
     }
     
     setSaving(true);
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       title,
       description: description || null,
       event_date: eventDateTime.toISOString(),
@@ -63,29 +88,22 @@ const AddEvent: React.FC = () => {
       registration_required: registrationRequired,
     };
     
-    let error: any = null;
-    if (editingId) {
-      const res = await supabase.from('events').update(payload).eq('id', editingId);
-      error = res.error;
-    } else {
-      const res = await supabase.from('events').insert(payload).single();
-      error = res.error;
+    try {
+      await saveMutation.mutateAsync({ editingId, payload });
+      setSuccess(editingId ? 'Event updated successfully!' : 'Event saved successfully!');
+      setEditingId(null);
+      setTitle('');
+      setDescription('');
+      setEventDate('');
+      setEndDate('');
+      setLocation('');
+      setEventType('general');
+      setRegistrationRequired(false);
+    } catch (err: any) {
+      setError(err?.message || 'Save failed');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    setSuccess(editingId ? 'Event updated successfully!' : 'Event saved successfully!');
-    setEditingId(null);
-    setTitle('');
-    setDescription('');
-    setEventDate('');
-    setEndDate('');
-    setLocation('');
-    setEventType('general');
-    setRegistrationRequired(false);
-    loadEvents();
   };
 
   const handleEdit = (ev: any) => {
@@ -123,14 +141,13 @@ const AddEvent: React.FC = () => {
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
     setError(null);
-    const { error } = await supabase.from('events').delete().in('id', selectedIds);
-    if (error) {
-      setError(error.message);
-      return;
+    try {
+      await deleteMutation.mutateAsync(selectedIds);
+      setSelectedIds([]);
+      setSuccess('Deleted successfully');
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
     }
-    setSelectedIds([]);
-    setSuccess('Deleted successfully');
-    loadEvents();
   };
 
   return (
@@ -314,7 +331,3 @@ const AddEvent: React.FC = () => {
 };
 
 export default AddEvent;
-
-
-
-

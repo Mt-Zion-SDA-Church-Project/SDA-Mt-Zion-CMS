@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 
 interface BirthdayMember {
   id: string;
@@ -16,20 +18,11 @@ interface BirthdayMember {
 }
 
 const Birthdays: React.FC = () => {
-  const [birthdays, setBirthdays] = useState<BirthdayMember[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    loadUpcomingBirthdays();
-  }, []);
-
-  const loadUpcomingBirthdays = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
+  const { data: birthdays = [], isPending: loading, error: queryError } = useQuery({
+    queryKey: queryKeys.members.birthdays('admin'),
+    queryFn: async () => {
       const { data, error: fetchError } = await supabase
         .from('members')
         .select('id, first_name, last_name, middle_name, gender, address, date_of_birth, phone, email')
@@ -38,10 +31,7 @@ const Birthdays: React.FC = () => {
 
       if (fetchError) throw fetchError;
 
-      // Process birthdays to find upcoming ones (next 7 days)
       const today = new Date();
-      const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-      
       const upcomingBirthdays = (data || []).map(member => {
         const birthDate = new Date(member.date_of_birth);
         const thisYear = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
@@ -57,19 +47,15 @@ const Birthdays: React.FC = () => {
         };
       }).filter(member => member.daysUntil >= 0 && member.daysUntil <= 7);
 
-      // Sort by days until birthday
       upcomingBirthdays.sort((a, b) => a.daysUntil - b.daysUntil);
 
-      setBirthdays(upcomingBirthdays);
+      return upcomingBirthdays as BirthdayMember[];
+    },
+  });
 
-    } catch (err: any) {
-      setError(err.message || 'Failed to load birthdays');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const error = queryError ? (queryError as Error).message : null;
 
-  const filteredBirthdays = birthdays.filter(member => {
+  const filteredBirthdays = useMemo(() => birthdays.filter(member => {
     if (!searchQuery.trim()) return true;
     
     const searchTerm = searchQuery.toLowerCase();
@@ -79,7 +65,7 @@ const Birthdays: React.FC = () => {
       member.middle_name?.toLowerCase().includes(searchTerm) ||
       member.email?.toLowerCase().includes(searchTerm)
     );
-  });
+  }), [birthdays, searchQuery]);
 
   const getDaysUntilText = (daysUntil: number) => {
     if (daysUntil === 0) return 'Today!';
@@ -199,9 +185,3 @@ const Birthdays: React.FC = () => {
 };
 
 export default Birthdays;
-
-
-
-
-
-

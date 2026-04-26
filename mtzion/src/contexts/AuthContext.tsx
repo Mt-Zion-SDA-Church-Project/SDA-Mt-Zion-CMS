@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { queryKeys } from '../lib/queryKeys';
 import type { User } from '../types';
 
 interface AuthContextType {
@@ -14,119 +16,110 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
-  const isMember = user?.role === 'member';
+  const queryClient = useQueryClient();
+  const [sessionReady, setSessionReady] = useState(false);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('AuthProvider: Starting auth initialization');
-    
-    // Check for existing session first
+
     const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
         console.log('Initial session check:', { session, error });
-        
-        if (session?.user) {
-          console.log('Found existing session, fetching user profile...');
-          await fetchUserProfile(session.user.id);
-        } else {
-          console.log('No existing session found');
-          setLoading(false);
-        }
+        setAuthUserId(session?.user?.id ?? null);
       } catch (error) {
         console.error('Error checking initial session:', error);
-        setLoading(false);
+      } finally {
+        setSessionReady(true);
       }
     };
 
-    // Initialize auth state
-    initializeAuth();
-    
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state change:', { event, session });
+    void initializeAuth();
 
-        if (session?.user) {
-          // Token refresh fires often; re-fetching profile remounts heavy UI and can duplicate side effects (e.g. QR check-in).
-          if (event === 'TOKEN_REFRESHED') {
-            return;
-          }
-          await fetchUserProfile(session.user.id);
-        } else {
-          setUser(null);
-          setLoading(false);
-        }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', { event, session });
+
+      if (event === 'TOKEN_REFRESHED') {
+        return;
       }
-    );
+
+      const uid = session?.user?.id ?? null;
+      setAuthUserId(uid);
+      if (!uid) {
+        queryClient.removeQueries({ queryKey: ['auth'] });
+      }
+    });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
-  const fetchUserProfile = async (userId: string) => {
-    console.log('=== FETCH USER PROFILE START ===');
-    console.log('Fetching user profile for:', userId);
-    
-    // Add timeout to prevent hanging
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Database query timeout')), 30000)       
-    );
+  const { data: user, isPending: profilePending } = useQuery({
+    queryKey: queryKeys.auth.profile(authUserId ?? 'none'),
+    enabled: sessionReady && !!authUserId,
+    queryFn: async (): Promise<User | null> => {
+      const userId = authUserId!;
+      console.log('=== FETCH USER PROFILE START ===');
+      console.log('Fetching user profile for:', userId);
 
-    try {
-      console.log('About to query system_users table...');
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Database query timeout')), 30000)
+      );
 
-      // First try to get system user (admin) with timeout
-      const systemUserPromise = supabase
-        .from('system_users')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .single();
+      try {
+        console.log('About to query system_users table...');
 
-      const { data: systemUser, error: systemError } = await Promise.race([
-        systemUserPromise,
-        timeoutPromise
-      ]) as any;
+        const systemUserPromise = supabase
+          .from('system_users')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .single();
 
-      console.log('System user query result:', { systemUser, systemError });
-      
-      // Log detailed error information
-      if (systemError) {
-        console.error('System user query error details:', {
-          message: systemError.message,
-          details: systemError.details,
-          hint: systemError.hint,
-          code: systemError.code
-        });
-      }
+        const { data: systemUser, error: systemError } = (await Promise.race([
+          systemUserPromise,
+          timeoutPromise,
+        ])) as Awaited<typeof systemUserPromise>;
 
-      if (systemUser && !systemError) {
-        if (systemUser.is_active === false) {
-          console.warn('System user is inactive; signing out');
-          try {
-            await supabase.auth.signOut();
-          } catch (e) {
-            console.error('Error signing out inactive user:', e);
-          }
-          setUser(null);
-          return;
+        console.log('System user query result:', { systemUser, systemError });
+
+        if (systemError) {
+          console.error('System user query error details:', {
+            message: systemError.message,
+            details: systemError.details,
+            hint: systemError.hint,
+            code: systemError.code,
+          });
         }
-        setUser({
-          id: userId,
-          email: systemUser.email,
-          role: systemUser.role,
-          full_name: systemUser.full_name,
-        });
-        console.log('Set user as system user:', systemUser);
-      } else {
+
+        if (systemUser && !systemError) {
+          if (systemUser.is_active === false) {
+            console.warn('System user is inactive; signing out');
+            try {
+              await supabase.auth.signOut();
+            } catch (e) {
+              console.error('Error signing out inactive user:', e);
+            }
+            return null;
+          }
+          console.log('Set user as system user:', systemUser);
+          return {
+            id: userId,
+            email: systemUser.email,
+            role: systemUser.role as User['role'],
+            full_name: systemUser.full_name,
+          };
+        }
+
         console.log('No system user found, trying members table...');
-        
-        // Try to get member with timeout
+
         const memberPromise = supabase
           .from('members')
           .select('*')
@@ -134,42 +127,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('status', 'active')
           .single();
 
-        const { data: member, error: memberError } = await Promise.race([
+        const { data: member, error: memberError } = (await Promise.race([
           memberPromise,
-          timeoutPromise
-        ]) as any;
+          timeoutPromise,
+        ])) as Awaited<typeof memberPromise>;
 
         console.log('Member query result:', { member, memberError });
 
         if (member && !memberError) {
-          setUser({
+          console.log('Set user as member:', member);
+          return {
             id: userId,
             email: member.email || '',
             role: 'member',
             full_name: `${member.first_name} ${member.last_name}`,
-          });
-          console.log('Set user as member:', member);
-        } else {
-          console.log('No user profile found in either table');
-          // Don't set a fallback user - let them stay logged out
-          console.log('No user profile found - user will remain logged out');
+          };
         }
+
+        console.log('No user profile found in either table');
+        return null;
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        console.error('CRITICAL ERROR in fetchUserProfile:', error);
+        console.error('Error details:', err?.message);
+        return null;
+      } finally {
+        console.log('=== FETCH USER PROFILE END ===');
       }
-    } catch (error) {
-      console.error('CRITICAL ERROR in fetchUserProfile:', error);
-      console.error('Error details:', error.message);
-      
-      // Don't set a fallback user - let them stay logged out
-      console.log('Database error - user will remain logged out');
-    } finally {
-      console.log('=== FETCH USER PROFILE END - Setting loading to false ===');
-      setLoading(false);
-    }
-  };
+    },
+  });
+
+  const resolvedUser = !authUserId ? null : (user ?? null);
+  const loading = !sessionReady || (!!authUserId && profilePending);
+  const isAdmin = resolvedUser?.role === 'admin' || resolvedUser?.role === 'super_admin';
+  const isMember = resolvedUser?.role === 'member';
 
   const signIn = async (email: string, password: string) => {
     console.log('Attempting sign in with:', email);
-    
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -181,43 +176,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Sign in error:', error.message);
       throw error;
     }
-    
+
     console.log('Sign in successful, user:', data.user?.id);
   };
 
   const signOut = async () => {
     console.log('Starting sign out process...');
     try {
-      // Sign out from Supabase first
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Sign out error:', error);
-        // Continue with local cleanup even if Supabase signOut fails
       }
-      
-      // Clear all local storage
+
       try {
         localStorage.clear();
         sessionStorage.clear();
       } catch (storageError) {
         console.error('Error clearing storage:', storageError);
       }
-      
+
+      queryClient.removeQueries({ queryKey: ['auth'] });
+      setAuthUserId(null);
       console.log('Sign out successful');
-      
-      // Clear local state - this will trigger the auth state change listener
-      setUser(null);
     } catch (error) {
       console.error('Sign out failed:', error);
-      // Still try to clear local state
-      setUser(null);
+      setAuthUserId(null);
     }
   };
 
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: resolvedUser,
         loading,
         signIn,
         signOut,

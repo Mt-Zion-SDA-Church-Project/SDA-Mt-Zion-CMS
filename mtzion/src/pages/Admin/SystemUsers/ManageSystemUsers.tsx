@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import { CheckCircle2, XCircle, ShieldCheck, Search, Users } from 'lucide-react';
 
 type Row = {
@@ -13,50 +15,44 @@ type Row = {
 };
 
 const ManageSystemUsers: React.FC = () => {
-  const [rows, setRows] = useState<Row[]>([]);
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [onlyActive, setOnlyActive] = useState<'all' | 'active' | 'inactive'>('all');
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const { data: rows = [], isPending: loading, error: queryError } = useQuery({
+    queryKey: queryKeys.systemUsers.manage(),
+    queryFn: async () => {
+      const { data, error: err } = await supabase
+        .from('system_users')
+        .select('id, full_name, email, username, role, is_active, last_login')
+        .order('full_name');
+      if (err) throw err;
+      return (data || []).map((u: any) => ({
+        id: u.id,
+        fullName: u.full_name,
+        email: u.email,
+        username: u.username,
+        role: (u.role || 'member') as Row['role'],
+        isActive: Boolean(u.is_active),
+        lastLogin: u.last_login,
+      })) as Row[];
+    },
+  });
+  const error = queryError ? (queryError as Error).message : null;
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase
-          .from('system_users')
-          .select('id, full_name, email, username, role, is_active, last_login')
-          .order('full_name');
-        if (err) throw err;
-        setRows(
-          (data || []).map((u: any) => ({
-            id: u.id,
-            fullName: u.full_name,
-            email: u.email,
-            username: u.username,
-            role: (u.role || 'member') as Row['role'],
-            isActive: Boolean(u.is_active),
-            lastLogin: u.last_login,
-          }))
-        );
-      } catch (e: any) {
-        setError(e.message || 'Failed to load system users');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
     const channel = supabase
       .channel('system-users-manage')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'system_users' }, () => {
-        load();
+        void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.manage() });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.forAddUser() });
       })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [queryClient]);
 
   const filtered = useMemo(() => {
     const byStatus = rows.filter((r) =>
@@ -73,17 +69,26 @@ const ManageSystemUsers: React.FC = () => {
     );
   }, [rows, query, onlyActive]);
 
-  const toggleActive = async (id: string, next: boolean) => {
-    // allow super admin to toggle active flag; assume RLS permits
-    try {
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, next }: { id: string; next: boolean }) => {
       const { error: err } = await supabase
         .from('system_users')
         .update({ is_active: next })
         .eq('id', id);
       if (err) throw err;
-      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, isActive: next } : r)));
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.manage() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemUsers.forAddUser() });
+    },
+  });
+
+  const toggleActive = async (id: string, next: boolean) => {
+    setActionError(null);
+    try {
+      await toggleMutation.mutateAsync({ id, next });
     } catch (e: any) {
-      setError(e.message || 'Failed to update status');
+      setActionError(e.message || 'Failed to update status');
     }
   };
 
@@ -121,7 +126,7 @@ const ManageSystemUsers: React.FC = () => {
         </div>
 
         <div className="p-4">
-          {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
+          {(error || actionError) && <div className="text-sm text-red-600 mb-2">{error || actionError}</div>}
           {loading && <div className="text-sm text-gray-600 mb-2">Loading...</div>}
 
           <div className="overflow-x-auto">
@@ -185,6 +190,3 @@ const ManageSystemUsers: React.FC = () => {
 };
 
 export default ManageSystemUsers;
-
-
-

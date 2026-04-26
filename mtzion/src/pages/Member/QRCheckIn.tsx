@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 import { QrCode, CheckCircle, Clock, Calendar, MapPin, XCircle } from 'lucide-react';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 import PageLoader from '../../components/Layout/PageLoader';
@@ -13,7 +15,6 @@ const VALID_ATTENDANCE_TYPES = new Set([
   'multi_member',
 ]);
 
-/** Events store free-text `event_type` (e.g. "general"); attendance uses an enum. */
 function mapEventTypeToAttendanceType(eventType: string | null | undefined) {
   const t = (eventType || 'event').toLowerCase();
   if (VALID_ATTENDANCE_TYPES.has(t)) {
@@ -29,10 +30,8 @@ function buildLoginUrlWithReturn(encodedData: string) {
   return `/login?returnTo=${encodeURIComponent(returnPath)}`;
 }
 
-/** Postgres unique_violation — second insert blocked by DB (e.g. React Strict Mode double effect). */
 const PG_UNIQUE_VIOLATION = '23505';
 
-/** Serialize check-in for same user+event (same tab remounts / auth churn / double effect). */
 function runWithCheckInLock(userId: string, eventId: string, fn: () => Promise<void>): Promise<void> {
   const name = `mtz-qr-checkin:${userId}:${eventId}`;
   if (typeof navigator !== 'undefined' && navigator.locks?.request) {
@@ -41,214 +40,184 @@ function runWithCheckInLock(userId: string, eventId: string, fn: () => Promise<v
   return fn();
 }
 
-const MemberQRCheckIn: React.FC = () => {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
-  const [message, setMessage] = useState('');
-  const [eventDetails, setEventDetails] = useState<any>(null);
-  const [memberName, setMemberName] = useState('');
-  const [recentCheckIns, setRecentCheckIns] = useState<any[]>([]);
+type CheckInMutationResult =
+  | { outcome: 'redirect_login' }
+  | { outcome: 'success'; message: string; eventDetails: Record<string, unknown> | null; memberName: string };
 
-  // Load recent check-ins for the logged-in member
-  const loadRecentCheckIns = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+type RecentCheckInRow = {
+  id: string;
+  check_in_time: string;
+  attendance_date: string;
+  event: { title: string; location: string; event_date: string } | null;
+};
 
-      const { data: member } = await supabase
-        .from('members')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
+async function fetchRecentCheckIns(): Promise<RecentCheckInRow[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
 
-      if (member) {
-        const { data, error } = await supabase
-          .from('attendance')
-          .select(`
+  const { data: member } = await supabase.from('members').select('id').eq('user_id', user.id).single();
+  if (!member) return [];
+
+  const { data, error } = await supabase
+    .from('attendance')
+    .select(
+      `
             id,
             check_in_time,
             attendance_date,
             event:events(title, location, event_date)
-          `)
-          .eq('member_id', member.id)
-          .order('check_in_time', { ascending: false })
-          .limit(5);
+          `
+    )
+    .eq('member_id', member.id)
+    .order('check_in_time', { ascending: false })
+    .limit(5);
 
-        if (!error && data) {
-          setRecentCheckIns(data);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load recent check-ins:', err);
-    }
-  };
+  if (error) throw error;
+  return (data as RecentCheckInRow[]) || [];
+}
 
-  useEffect(() => {
-    loadRecentCheckIns();
-  }, []);
-
+const MemberQRCheckIn: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const dataParam = searchParams.get('data');
 
   useEffect(() => {
-    let cancelled = false;
+    const channel = supabase
+      .channel('member-qr-checkin-attendance')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.qrCheckIn.recentCheckIns() });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
-    const processCheckIn = async () => {
-      const encodedData = dataParam;
+  const recentQuery = useQuery({
+    queryKey: queryKeys.qrCheckIn.recentCheckIns(),
+    queryFn: fetchRecentCheckIns,
+  });
 
-      // If no QR data, show scanning instructions
-      if (!encodedData) {
-        setStatus('idle');
-        return;
+  const recentCheckIns = recentQuery.data ?? [];
+
+  const checkInMutation = useMutation({
+    mutationFn: async (encodedData: string): Promise<CheckInMutationResult> => {
+      const payload = JSON.parse(atob(encodedData));
+
+      if (!payload.eventId || payload.type !== 'event_checkin') {
+        throw new Error('Invalid QR code. Please scan a valid event QR code.');
       }
 
-      setStatus('processing');
+      if (payload.expiresAt && Date.now() > payload.expiresAt) {
+        throw new Error('This QR code has expired. Please contact an administrator.');
+      }
 
-      try {
-        // Decode the QR data
-        const payload = JSON.parse(atob(encodedData));
-        
-        // Validate payload
-        if (!payload.eventId || payload.type !== 'event_checkin') {
-          throw new Error('Invalid QR code. Please scan a valid event QR code.');
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        try {
+          localStorage.setItem('pendingCheckIn', encodedData);
+        } catch {
+          /* ignore */
         }
-        
-        // Check if QR code expired (4 hours validity)
-        if (payload.expiresAt && Date.now() > payload.expiresAt) {
-          throw new Error('This QR code has expired. Please contact an administrator.');
-        }
-        
-        // Get current logged-in member
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        
-        if (authError || !user) {
-          try {
-            localStorage.setItem('pendingCheckIn', encodedData);
-          } catch {
-            /* ignore quota / private mode */
-          }
-          if (!cancelled) {
-            navigate(buildLoginUrlWithReturn(encodedData), { replace: true });
-          }
+        navigate(buildLoginUrlWithReturn(encodedData), { replace: true });
+        return { outcome: 'redirect_login' as const };
+      }
+
+      const { data: member, error: memberError } = await supabase
+        .from('members')
+        .select('id, first_name, last_name')
+        .eq('user_id', user.id)
+        .single();
+
+      if (memberError || !member) {
+        throw new Error('Member profile not found. Please contact the church office.');
+      }
+
+      const { data: event, error: eventError } = await supabase
+        .from('events')
+        .select('id, title, event_date, location, event_type')
+        .eq('id', payload.eventId)
+        .single();
+
+      if (eventError) {
+        throw new Error('Event not found. Please contact an administrator.');
+      }
+
+      let successMessage = '';
+
+      await runWithCheckInLock(user.id, payload.eventId, async () => {
+        const { data: existingRows } = await supabase
+          .from('attendance')
+          .select('id')
+          .eq('member_id', member.id)
+          .eq('event_id', payload.eventId)
+          .limit(1);
+
+        if (existingRows && existingRows.length > 0) {
+          successMessage = `You're already checked in for "${event.title}", ${member.first_name}. Welcome!`;
+          localStorage.removeItem('pendingCheckIn');
           return;
         }
 
-        // Get member details
-        const { data: member, error: memberError } = await supabase
-          .from('members')
-          .select('id, first_name, last_name')
-          .eq('user_id', user.id)
-          .single();
-        
-        if (memberError || !member) {
-          throw new Error('Member profile not found. Please contact the church office.');
-        }
+        const { error: insertError } = await supabase.from('attendance').insert({
+          member_id: member.id,
+          event_id: payload.eventId,
+          attendance_date: new Date().toISOString().split('T')[0],
+          attendance_type: mapEventTypeToAttendanceType(event.event_type),
+          check_in_time: new Date().toISOString(),
+          qr_scanned: true,
+          created_at: new Date().toISOString(),
+        });
 
-        if (cancelled) return;
+        if (insertError) {
+          const msg = (insertError.message || '').toLowerCase();
+          const isUniqueViolation =
+            insertError.code === PG_UNIQUE_VIOLATION ||
+            msg.includes('duplicate key') ||
+            msg.includes('unique constraint');
 
-        setMemberName(`${member.first_name} ${member.last_name}`);
-
-        // Get event details
-        const { data: event, error: eventError } = await supabase
-          .from('events')
-          .select('id, title, event_date, location, event_type')
-          .eq('id', payload.eventId)
-          .single();
-        
-        if (eventError) {
-          throw new Error('Event not found. Please contact an administrator.');
-        }
-
-        if (cancelled) return;
-
-        setEventDetails(event);
-
-        await runWithCheckInLock(user.id, payload.eventId, async () => {
-          if (cancelled) return;
-
-          // limit(1): safe if DB already has duplicates (maybeSingle() errors on 2+ rows)
-          const { data: existingRows } = await supabase
-            .from('attendance')
-            .select('id')
-            .eq('member_id', member.id)
-            .eq('event_id', payload.eventId)
-            .limit(1);
-
-          if (existingRows && existingRows.length > 0) {
-            if (!cancelled) {
-              setStatus('success');
-              setMessage(
-                `You're already checked in for "${event.title}", ${member.first_name}. Welcome!`
-              );
-              localStorage.removeItem('pendingCheckIn');
-              loadRecentCheckIns();
-            }
+          if (isUniqueViolation) {
+            successMessage = `You're already checked in for "${event.title}", ${member.first_name}. Welcome!`;
+            localStorage.removeItem('pendingCheckIn');
             return;
           }
+          console.error('Attendance insert failed:', insertError);
+          throw new Error(
+            insertError.message ||
+              'Could not save attendance. If this persists, ask an admin to verify database permissions for the attendance table.'
+          );
+        }
 
-          if (cancelled) return;
+        successMessage = `Welcome, ${member.first_name}! You have successfully checked in to "${event.title}".`;
+        localStorage.removeItem('pendingCheckIn');
+      });
 
-          const { error: insertError } = await supabase
-            .from('attendance')
-            .insert({
-              member_id: member.id,
-              event_id: payload.eventId,
-              attendance_date: new Date().toISOString().split('T')[0],
-              attendance_type: mapEventTypeToAttendanceType(event.event_type),
-              check_in_time: new Date().toISOString(),
-              qr_scanned: true,
-              created_at: new Date().toISOString(),
-            });
+      return {
+        outcome: 'success' as const,
+        message: successMessage,
+        eventDetails: event as Record<string, unknown>,
+        memberName: `${member.first_name} ${member.last_name}`,
+      };
+    },
+    onSuccess: (data) => {
+      if (data.outcome === 'redirect_login') return;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.qrCheckIn.recentCheckIns() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.dashboardMe() });
+    },
+  });
 
-          if (insertError) {
-            const msg = (insertError.message || '').toLowerCase();
-            const isUniqueViolation =
-              insertError.code === PG_UNIQUE_VIOLATION ||
-              msg.includes('duplicate key') ||
-              msg.includes('unique constraint');
+  const { mutate: runCheckIn, reset: resetCheckIn } = checkInMutation;
 
-            if (isUniqueViolation) {
-              if (!cancelled) {
-                setStatus('success');
-                setMessage(
-                  `You're already checked in for "${event.title}", ${member.first_name}. Welcome!`
-                );
-                localStorage.removeItem('pendingCheckIn');
-                loadRecentCheckIns();
-              }
-              return;
-            }
-            console.error('Attendance insert failed:', insertError);
-            throw new Error(
-              insertError.message ||
-                'Could not save attendance. If this persists, ask an admin to verify database permissions for the attendance table.'
-            );
-          }
+  useEffect(() => {
+    if (!dataParam) {
+      resetCheckIn();
+      return;
+    }
+    runCheckIn(dataParam);
+  }, [dataParam, runCheckIn, resetCheckIn]);
 
-          if (cancelled) return;
-
-          setStatus('success');
-          setMessage(`Welcome, ${member.first_name}! You have successfully checked in to "${event.title}".`);
-
-          localStorage.removeItem('pendingCheckIn');
-          loadRecentCheckIns();
-        });
-      } catch (err: any) {
-        if (cancelled) return;
-        console.error('Check-in error:', err);
-        setStatus('error');
-        setMessage(err.message || 'Failed to check in. Please try again or contact the administrator.');
-      }
-    };
-
-    void processCheckIn();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dataParam, navigate]);
-
-  // Fallback: older flows stored pending data without returnTo on the URL
   useEffect(() => {
     const run = async () => {
       if (dataParam) return;
@@ -265,32 +234,23 @@ const MemberQRCheckIn: React.FC = () => {
     void run();
   }, [dataParam, navigate]);
 
-  const getEventTypeColor = (type: string) => {
-    switch (type) {
-      case 'service': return 'bg-blue-100 text-blue-800';
-      case 'sabbath_school': return 'bg-green-100 text-green-800';
-      case 'prayer_meeting': return 'bg-purple-100 text-purple-800';
-      case 'event': return 'bg-orange-100 text-orange-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  const processing = !!dataParam && checkInMutation.isPending;
+  const successData = checkInMutation.isSuccess && checkInMutation.data?.outcome === 'success' ? checkInMutation.data : null;
+  const errorMessage = checkInMutation.isError
+    ? (checkInMutation.error as Error).message || 'Failed to check in. Please try again or contact the administrator.'
+    : null;
 
-  // Processing state
-  if (status === 'processing') {
+  if (processing) {
     return (
       <div className="min-h-screen bg-gray-50">
         <MemberMobileNav title="Processing Check-in" />
-        <PageLoader
-          variant="inline"
-          message="Recording your attendance…"
-          className="bg-gray-50/80"
-        />
+        <PageLoader variant="inline" message="Recording your attendance…" className="bg-gray-50/80" />
       </div>
     );
   }
-  
-  // Success state
-  if (status === 'success') {
+
+  if (successData) {
+    const eventDetails = successData.eventDetails;
     return (
       <div className="min-h-screen bg-gray-50">
         <MemberMobileNav title="Check-in Successful" />
@@ -300,23 +260,23 @@ const MemberQRCheckIn: React.FC = () => {
               <CheckCircle className="w-12 h-12 text-green-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome!</h2>
-            <p className="text-gray-600 mb-4">{message}</p>
+            <p className="text-gray-600 mb-4">{successData.message}</p>
             {eventDetails && (
               <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
                 <h3 className="font-semibold text-gray-900 mb-2">Event Details:</h3>
                 <div className="space-y-2 text-sm text-gray-600">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    <span>{new Date(eventDetails.event_date).toLocaleDateString()}</span>
+                    <span>{new Date(String(eventDetails.event_date)).toLocaleDateString()}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4" />
-                    <span>{new Date(eventDetails.event_date).toLocaleTimeString()}</span>
+                    <span>{new Date(String(eventDetails.event_date)).toLocaleTimeString()}</span>
                   </div>
                   {eventDetails.location && (
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4" />
-                      <span>{eventDetails.location}</span>
+                      <span>{String(eventDetails.location)}</span>
                     </div>
                   )}
                 </div>
@@ -333,9 +293,8 @@ const MemberQRCheckIn: React.FC = () => {
       </div>
     );
   }
-  
-  // Error state
-  if (status === 'error') {
+
+  if (dataParam && errorMessage) {
     return (
       <div className="min-h-screen bg-gray-50">
         <MemberMobileNav title="Check-in Failed" />
@@ -345,7 +304,7 @@ const MemberQRCheckIn: React.FC = () => {
               <XCircle className="w-12 h-12 text-red-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Check-in Failed</h2>
-            <p className="text-red-600 mb-6">{message}</p>
+            <p className="text-red-600 mb-6">{errorMessage}</p>
             <button
               onClick={() => navigate('/member/dashboard')}
               className="w-full py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
@@ -357,52 +316,55 @@ const MemberQRCheckIn: React.FC = () => {
       </div>
     );
   }
-  
-  // Idle state - show instructions for scanning QR code
+
   return (
     <div className="min-h-screen bg-gray-50">
       <MemberMobileNav title="QR Check-in" />
-      
+
       <div className="max-w-md mx-auto p-4 space-y-6">
-        {/* Instructions Card */}
         <div className="bg-white rounded-lg shadow-lg p-6 text-center">
           <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <QrCode className="w-12 h-12 text-blue-600" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Scan Event QR Code</h2>
-          <p className="text-gray-600 mb-4">
-            Use your phone camera to scan the QR code displayed at the church entrance.
-          </p>
-          
+          <p className="text-gray-600 mb-4">Use your phone camera to scan the QR code displayed at the church entrance.</p>
+
           <div className="bg-blue-50 rounded-lg p-4 mb-6 text-left">
             <h3 className="font-semibold text-blue-900 mb-3">How to check in:</h3>
             <ol className="space-y-3">
               <li className="flex items-start gap-3 text-sm text-blue-800">
-                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</span>
+                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                  1
+                </span>
                 <span>Open your phone's camera app</span>
               </li>
               <li className="flex items-start gap-3 text-sm text-blue-800">
-                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</span>
+                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                  2
+                </span>
                 <span>Point it at the QR code displayed at the entrance</span>
               </li>
               <li className="flex items-start gap-3 text-sm text-blue-800">
-                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</span>
+                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                  3
+                </span>
                 <span>Tap the notification that appears</span>
               </li>
               <li className="flex items-start gap-3 text-sm text-blue-800">
-                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">4</span>
+                <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                  4
+                </span>
                 <span>Your attendance will be automatically recorded</span>
               </li>
             </ol>
           </div>
-          
+
           <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg">
             <p className="font-medium text-gray-700 mb-1">📱 Need help?</p>
             <p>Make sure you're logged into your account. If not, you'll be prompted to log in when you scan.</p>
           </div>
         </div>
 
-        {/* Recent Check-ins */}
         {recentCheckIns.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
             <div className="px-5 py-4 border-b bg-gray-50">
@@ -419,17 +381,13 @@ const MemberQRCheckIn: React.FC = () => {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <p className="font-medium text-gray-800">
-                          {checkIn.event?.title || 'General Service'}
-                        </p>
+                        <p className="font-medium text-gray-800">{checkIn.event?.title || 'General Service'}</p>
                       </div>
                       <p className="text-xs text-gray-500">
                         {new Date(checkIn.check_in_time).toLocaleDateString()} at {new Date(checkIn.check_in_time).toLocaleTimeString()}
                       </p>
                       {checkIn.event?.location && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          📍 {checkIn.event.location}
-                        </p>
+                        <p className="text-xs text-gray-500 mt-1">📍 {checkIn.event.location}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-1">
@@ -443,7 +401,6 @@ const MemberQRCheckIn: React.FC = () => {
           </div>
         )}
 
-        {/* Test Mode Card (for development) */}
         {process.env.NODE_ENV === 'development' && (
           <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
             <p className="text-sm font-medium text-yellow-800 mb-2">🧪 Development Test Mode</p>
@@ -452,13 +409,14 @@ const MemberQRCheckIn: React.FC = () => {
             </p>
             <button
               onClick={() => {
-                // For testing - simulate a QR scan with a test event
-                const testPayload = btoa(JSON.stringify({
-                  eventId: 'YOUR_TEST_EVENT_ID', // Replace with an actual event ID from your database
-                  type: 'event_checkin',
-                  timestamp: Date.now(),
-                  expiresAt: Date.now() + (4 * 60 * 60 * 1000)
-                }));
+                const testPayload = btoa(
+                  JSON.stringify({
+                    eventId: 'YOUR_TEST_EVENT_ID',
+                    type: 'event_checkin',
+                    timestamp: Date.now(),
+                    expiresAt: Date.now() + 4 * 60 * 60 * 1000,
+                  })
+                );
                 window.location.href = `/member/qr-checkin?data=${testPayload}`;
               }}
               className="text-sm text-yellow-800 underline"

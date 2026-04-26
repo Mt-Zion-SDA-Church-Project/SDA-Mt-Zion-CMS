@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
 type ResourceRow = {
@@ -11,42 +13,40 @@ type ResourceRow = {
   created_at: string;
 };
 
+async function fetchSabbathResources(): Promise<ResourceRow[]> {
+  const { data, error } = await supabase
+    .from('sabbath_resources')
+    .select('id, title, category, file_url, file_path, created_at')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as ResourceRow[]) || [];
+}
+
 const MemberResources: React.FC = () => {
-  const [resources, setResources] = useState<ResourceRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'adult' | 'children'>('adult');
   const [query, setQuery] = useState('');
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error } = await supabase
-          .from('sabbath_resources')
-          .select('id, title, category, file_url, file_path, created_at')
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-        setResources((data as any) || []);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load resources');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const resourcesQuery = useQuery({
+    queryKey: queryKeys.memberPortal.resources(),
+    queryFn: fetchSabbathResources,
+  });
 
+  const resources = resourcesQuery.data ?? [];
+  const loading = resourcesQuery.isPending;
+  const error = resourcesQuery.error ? (resourcesQuery.error as Error).message : null;
+
+  useEffect(() => {
     const channel = supabase
       .channel('member-sabbath-resources')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sabbath_resources' }, () => {
-        load();
+        void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.resources() });
       })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [queryClient]);
 
   const filtered = useMemo(() => {
     const byCat = resources.filter((r) => r.category === activeTab);
@@ -96,7 +96,9 @@ const MemberResources: React.FC = () => {
                   <div className="text-xs text-gray-500">{new Date(r.created_at).toLocaleString()}</div>
                 </div>
                 {r.file_url ? (
-                  <a href={r.file_url} target="_blank" rel="noreferrer" className="px-3 py-1.5 text-xs bg-primary text-white rounded">Download</a>
+                  <a href={r.file_url} target="_blank" rel="noreferrer" className="px-3 py-1.5 text-xs bg-primary text-white rounded">
+                    Download
+                  </a>
                 ) : (
                   <span className="text-xs text-gray-500">No file URL</span>
                 )}
@@ -113,5 +115,3 @@ const MemberResources: React.FC = () => {
 };
 
 export default MemberResources;
-
-

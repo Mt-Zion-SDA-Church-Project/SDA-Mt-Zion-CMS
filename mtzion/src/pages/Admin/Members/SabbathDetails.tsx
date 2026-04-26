@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 
 type KidRow = {
   id: string;
@@ -18,56 +20,65 @@ type ResourceRow = {
 };
 
 const SabbathDetails: React.FC = () => {
-  const [rows, setRows] = useState<KidRow[]>([]);
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
   const [pageSize, setPageSize] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [resources, setResources] = useState<ResourceRow[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // Try to load sabbath classes, but do not fail the whole page if table is missing
-        const classesRes = await supabase
-          .from('sabbath_classes')
-          .select('id, church_name, location, sabbath_leader');
-        if (!classesRes.error) {
-          const mapped: KidRow[] = (classesRes.data || []).map((c: any) => ({
-            id: c.id,
-            churchName: c.church_name || '',
-            location: c.location || '',
-            sabbathTeacher: c.sabbath_leader || '',
-          }));
-          setRows(mapped);
-        } else {
-          // If schema cache/table not found, just show zero rows without surfacing an error banner
-          setRows([]);
-        }
+  const { data: rows = [], isPending: classesLoading } = useQuery({
+    queryKey: queryKeys.sabbath.classes(),
+    queryFn: async () => {
+      const classesRes = await supabase
+        .from('sabbath_classes')
+        .select('id, church_name, location, sabbath_leader');
+      if (classesRes.error) return [] as KidRow[];
+      return (classesRes.data || []).map((c: any) => ({
+        id: c.id,
+        churchName: c.church_name || '',
+        location: c.location || '',
+        sabbathTeacher: c.sabbath_leader || '',
+      })) as KidRow[];
+    },
+  });
 
-        // Load sabbath resources regardless of the classes table
-        const res = await supabase
-          .from('sabbath_resources')
-          .select('id, title, category, file_url, file_path, created_at')
-          .order('created_at', { ascending: false });
-        if (!res.error) {
-          setResources((res.data as any) || []);
-        } else {
-          setError(res.error.message || 'Failed to load resources');
-        }
-        
-        // Past papers removed from this page
-      } catch (err: any) {
-        setError(err.message || 'Failed to load sabbath school details');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
+  const { data: resources = [], isPending: resourcesLoading, error: resourcesQueryError } = useQuery({
+    queryKey: queryKeys.sabbath.resources(),
+    queryFn: async () => {
+      const res = await supabase
+        .from('sabbath_resources')
+        .select('id, title, category, file_url, file_path, created_at')
+        .order('created_at', { ascending: false });
+      if (res.error) throw res.error;
+      return (res.data as ResourceRow[]) || [];
+    },
+  });
+
+  const loading = classesLoading || resourcesLoading;
+  const error = resourcesQueryError ? (resourcesQueryError as Error).message : actionError;
+
+  const deleteClassesMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error: delError } = await supabase
+        .from('sabbath_classes')
+        .delete()
+        .in('id', ids);
+      if (delError) throw delError;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sabbath.classes() });
+    },
+  });
+
+  const deleteResourceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const del = await supabase.from('sabbath_resources').delete().eq('id', id);
+      if (del.error) throw del.error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sabbath.resources() });
+    },
+  });
 
   const data = useMemo(() => {
     if (!query.trim()) return rows;
@@ -80,36 +91,16 @@ const SabbathDetails: React.FC = () => {
     );
   }, [rows, query]);
 
-  const toggleSelectAll = (checked: boolean) => {
-    if (checked) setSelectedIds(new Set(data.slice(0, pageSize).map((r) => r.id)));
-    else setSelectedIds(new Set());
-  };
-
-  const toggleSelectOne = (id: string, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id); else next.delete(id);
-      return next;
-    });
-  };
-
   const handleDelete = async () => {
     if (selectedIds.size === 0) return;
     const confirmDelete = window.confirm('Delete selected records? This cannot be undone.');
     if (!confirmDelete) return;
+    setActionError(null);
     try {
-      setLoading(true);
-      const { error: delError } = await supabase
-        .from('sabbath_classes')
-        .delete()
-        .in('id', Array.from(selectedIds));
-      if (delError) throw delError;
-      setRows((prev) => prev.filter((r) => !selectedIds.has(r.id)));
+      await deleteClassesMutation.mutateAsync(Array.from(selectedIds));
       setSelectedIds(new Set());
     } catch (err: any) {
-      setError(err.message || 'Failed to delete');
-    } finally {
-      setLoading(false);
+      setActionError(err.message || 'Failed to delete');
     }
   };
 
@@ -123,7 +114,7 @@ const SabbathDetails: React.FC = () => {
       </div>
 
       <div className="flex items-center justify-between mb-3">
-        <button onClick={handleDelete} disabled={selectedIds.size === 0 || loading} className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">Delete</button>
+        <button onClick={handleDelete} disabled={selectedIds.size === 0 || loading || deleteClassesMutation.isPending} className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">Delete</button>
         <div className="flex items-center gap-3 ml-4">
           <label className="text-sm text-gray-600">Show</label>
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="border rounded px-2 py-1">
@@ -182,15 +173,11 @@ const SabbathDetails: React.FC = () => {
                     {r.file_url && <a href={r.file_url} target="_blank" rel="noreferrer" className="px-2 py-1 text-xs bg-primary text-white rounded">Download</a>}
                     <button onClick={async () => {
                       if (!window.confirm('Delete resource?')) return;
+                      setActionError(null);
                       try {
-                        setLoading(true);
-                        const del = await supabase.from('sabbath_resources').delete().eq('id', r.id);
-                        if (del.error) throw del.error;
-                        setResources((prev) => prev.filter((x) => x.id !== r.id));
+                        await deleteResourceMutation.mutateAsync(r.id);
                       } catch (e: any) {
-                        setError(e.message || 'Failed to delete');
-                      } finally {
-                        setLoading(false);
+                        setActionError(e.message || 'Failed to delete');
                       }
                     }} className="px-2 py-1 text-xs bg-red-600 text-white rounded">Delete</button>
                   </div>
@@ -217,15 +204,11 @@ const SabbathDetails: React.FC = () => {
                     {r.file_url && <a href={r.file_url} target="_blank" rel="noreferrer" className="px-2 py-1 text-xs bg-primary text-white rounded">Download</a>}
                     <button onClick={async () => {
                       if (!window.confirm('Delete resource?')) return;
+                      setActionError(null);
                       try {
-                        setLoading(true);
-                        const del = await supabase.from('sabbath_resources').delete().eq('id', r.id);
-                        if (del.error) throw del.error;
-                        setResources((prev) => prev.filter((x) => x.id !== r.id));
+                        await deleteResourceMutation.mutateAsync(r.id);
                       } catch (e: any) {
-                        setError(e.message || 'Failed to delete');
-                      } finally {
-                        setLoading(false);
+                        setActionError(e.message || 'Failed to delete');
                       }
                     }} className="px-2 py-1 text-xs bg-red-600 text-white rounded">Delete</button>
                   </div>
@@ -245,5 +228,3 @@ const SabbathDetails: React.FC = () => {
 };
 
 export default SabbathDetails;
-
-

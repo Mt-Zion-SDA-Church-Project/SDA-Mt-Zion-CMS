@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import logo from '../../../assets/sda-logo.png';
 
 type KnownKey =
@@ -48,6 +50,7 @@ function formatUGX(n: number) {
 }
 
 const AddTithe: React.FC = () => {
+  const queryClient = useQueryClient();
   const [serviceDate, setServiceDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [rows, setRows] = useState<Row[]>(() =>
     (Object.keys(KNOWN_LABELS) as KnownKey[]).map((k) => ({ id: crypto.randomUUID(), label: KNOWN_LABELS[k], amount: '', key: k }))
@@ -80,12 +83,9 @@ const AddTithe: React.FC = () => {
 
   const handlePrint = () => window.print();
 
-  const handleSave = async () => {
-    setSaving(true);
-    setSaveErr('');
-    setSaveMsg('');
-    try {
-      if (!serviceDate) throw new Error('Please select the service date');
+  const saveMutation = useMutation({
+    mutationFn: async (vars: { serviceDate: string; rows: Row[]; notes: string }) => {
+      if (!vars.serviceDate) throw new Error('Please select the service date');
 
       // Map English categories to DB columns in cash_offering_accounts
       const base: Record<string, number> = {
@@ -127,7 +127,7 @@ const AddTithe: React.FC = () => {
         nbf_development_fund: 'ebirabo_ebirala',
       };
 
-      for (const r of rows) {
+      for (const r of vars.rows) {
         const amt = Math.max(0, Math.floor(Number(r.amount || 0)));
         if (r.key && categoryMapping[r.key]) {
           base[categoryMapping[r.key]] += amt;
@@ -137,15 +137,26 @@ const AddTithe: React.FC = () => {
       }
 
       const payload = {
-        service_date: serviceDate,
-        notes: notes || null,
+        service_date: vars.serviceDate,
+        notes: vars.notes || null,
         ...base,
       };
 
       const { error } = await supabase.from('cash_offering_accounts').insert(payload);
       if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tithes.cashOfferingAccounts() });
+    },
+  });
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveErr('');
+    setSaveMsg('');
+    try {
+      await saveMutation.mutateAsync({ serviceDate, rows, notes });
       setSaveMsg('Saved successfully');
-      // Reset to defaults after save
       handleReset();
       setServiceDate(new Date().toISOString().slice(0, 10));
     } catch (e: any) {

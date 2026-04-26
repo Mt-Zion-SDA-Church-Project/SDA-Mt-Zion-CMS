@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 import logo from '../../assets/sda-logo.png';
 
@@ -17,45 +19,51 @@ type Payment = {
 const OffertoryReceipt: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [payment, setPayment] = useState<Payment | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
+  const paymentQuery = useQuery({
+    queryKey: queryKeys.memberPortal.offertoryPayment(id ?? ''),
+    queryFn: async (): Promise<Payment | null> => {
       const { data, error } = await supabase
         .from('offertory_payments')
         .select('id, amount_ugx, method, categories, notes, provider_ref, created_at')
-        .eq('id', id)
+        .eq('id', id!)
         .single();
-      if (error) setError(error.message);
-      setPayment(data as any);
-      setLoading(false);
-    };
-    load();
-    // Auto-print support when opened from notification with ?auto=print
+      if (error) throw new Error(error.message);
+      return data as Payment;
+    },
+    enabled: !!id,
+  });
+
+  const payment = paymentQuery.data ?? null;
+  const loading = paymentQuery.isLoading;
+  const error = paymentQuery.error ? (paymentQuery.error as Error).message : null;
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('auto') === 'print') {
+    if (params.get('auto') === 'print' && payment) {
       setTimeout(() => window.print(), 400);
     }
-  }, [id]);
+  }, [payment]);
 
-  const formatUGX = (n: number) => new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', maximumFractionDigits: 0 }).format(n).replace('UGX', 'USh');
+  const formatUGX = (n: number) =>
+    new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', maximumFractionDigits: 0 })
+      .format(n)
+      .replace('UGX', 'USh');
 
-  if (loading) return (
-    <div className="p-6">
-      <MemberMobileNav title="Receipt" />
-      Loading…
-    </div>
-  );
-  if (error || !payment) return (
-    <div className="p-6">
-      <MemberMobileNav title="Receipt" />
-      <div className="text-red-600">{error || 'Receipt not found'}</div>
-    </div>
-  );
+  if (loading)
+    return (
+      <div className="p-6">
+        <MemberMobileNav title="Receipt" />
+        Loading…
+      </div>
+    );
+  if (error || !payment)
+    return (
+      <div className="p-6">
+        <MemberMobileNav title="Receipt" />
+        <div className="text-red-600">{error || 'Receipt not found'}</div>
+      </div>
+    );
 
   return (
     <div className="p-4">
@@ -116,14 +124,18 @@ const OffertoryReceipt: React.FC = () => {
             </table>
           </div>
 
-          {payment.notes && (
-            <div className="mt-4 text-sm text-gray-700">Note: {payment.notes}</div>
-          )}
+          {payment.notes && <div className="mt-4 text-sm text-gray-700">Note: {payment.notes}</div>}
 
           <div className="mt-6 flex items-center justify-end gap-2 hide-on-print">
-            <a href={`/member/offertory/receipt/${payment.id}?auto=print`} target="_blank" rel="noreferrer" className="px-4 py-2 bg-primary text-white rounded">Download PDF</a>
-            <button onClick={() => window.print()} className="px-4 py-2 border rounded">Print</button>
-            <button onClick={() => navigate('/member')} className="px-4 py-2 border rounded">Back to Dashboard</button>
+            <a href={`/member/offertory/receipt/${payment.id}?auto=print`} target="_blank" rel="noreferrer" className="px-4 py-2 bg-primary text-white rounded">
+              Download PDF
+            </a>
+            <button onClick={() => window.print()} className="px-4 py-2 border rounded">
+              Print
+            </button>
+            <button onClick={() => navigate('/member')} className="px-4 py-2 border rounded">
+              Back to Dashboard
+            </button>
           </div>
         </div>
       </div>
@@ -132,5 +144,3 @@ const OffertoryReceipt: React.FC = () => {
 };
 
 export default OffertoryReceipt;
-
-

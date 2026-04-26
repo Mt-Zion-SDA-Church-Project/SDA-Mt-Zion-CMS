@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import { Shield, Users, Settings, Save, RefreshCw, Search, Filter, Zap, Eye, EyeOff } from 'lucide-react';
 import PageLoader from '../../../components/Layout/PageLoader';
 import { UserPrivilege, PrivilegeTab, SystemUser, Member } from '../../../types';
 
 const ManagePrivileges: React.FC = () => {
-  const [users, setUsers] = useState<(SystemUser | Member)[]>([]);
+  const queryClient = useQueryClient();
   const [privileges, setPrivileges] = useState<UserPrivilege[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selectedUserType, setSelectedUserType] = useState<'admin' | 'member'>('admin');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'allowed' | 'blocked'>('all');
@@ -40,16 +39,9 @@ const ManagePrivileges: React.FC = () => {
 
   const currentTabs = selectedUserType === 'admin' ? adminTabs : memberTabs;
 
-  useEffect(() => {
-    loadData();
-  }, [selectedUserType]);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Load users based on selected type
+  const { data, isPending: loading, isError, error: loadError } = useQuery({
+    queryKey: queryKeys.privileges.manage(selectedUserType),
+    queryFn: async () => {
       let usersData: (SystemUser | Member)[] = [];
       if (selectedUserType === 'admin') {
         const { data: adminUsers, error: adminError } = await supabase
@@ -70,28 +62,28 @@ const ManagePrivileges: React.FC = () => {
         usersData = members || [];
       }
 
-      // Load existing privileges
       const userIds = usersData.map(u => u.id);
+      let privilegesData: UserPrivilege[] = [];
       if (userIds.length > 0) {
-        const { data: privilegesData, error: privilegesError } = await supabase
+        const { data: pData, error: privilegesError } = await supabase
           .from('user_privileges')
           .select('*')
           .eq('user_type', selectedUserType)
           .in('user_id', userIds);
 
         if (privilegesError) throw privilegesError;
-        setPrivileges(privilegesData || []);
-      } else {
-        setPrivileges([]);
+        privilegesData = pData || [];
       }
 
-      setUsers(usersData);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load data');
-    } finally {
-      setLoading(false);
-    }
-  };
+      return { users: usersData, privileges: privilegesData };
+    },
+  });
+
+  const users = data?.users ?? [];
+
+  useEffect(() => {
+    if (data) setPrivileges(data.privileges);
+  }, [data]);
 
   const getPrivilegeForUser = (userId: string, tabName: string): boolean => {
     const privilege = privileges.find(p => p.user_id === userId && p.tab_name === tabName);
@@ -121,13 +113,10 @@ const ManagePrivileges: React.FC = () => {
     });
   };
 
-  const savePrivileges = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-
-      // Delete existing privileges for these users
-      const userIds = users.map(u => u.id);
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const userList = data?.users ?? [];
+      const userIds = userList.map(u => u.id);
       if (userIds.length > 0) {
         await supabase
           .from('user_privileges')
@@ -136,7 +125,6 @@ const ManagePrivileges: React.FC = () => {
           .in('user_id', userIds);
       }
 
-      // Insert new privileges
       const privilegesToInsert = privileges
         .filter(p => userIds.includes(p.user_id))
         .map(p => ({
@@ -153,14 +141,21 @@ const ManagePrivileges: React.FC = () => {
 
         if (insertError) throw insertError;
       }
-
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.privileges.manage(selectedUserType) });
+      void queryClient.invalidateQueries({ queryKey: ['sidebar', 'privileges'] });
+      void queryClient.invalidateQueries({ queryKey: ['memberMobileNav', 'privileges'] });
       alert('Privileges saved successfully!');
-    } catch (err: any) {
-      setError(err.message || 'Failed to save privileges');
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+  });
+
+  const savePrivileges = () => saveMutation.mutate();
+  const saving = saveMutation.isPending;
+  const error =
+    (isError && loadError ? (loadError as Error).message : null) ||
+    (saveMutation.isError ? (saveMutation.error as Error)?.message : null) ||
+    null;
 
   const getUserName = (user: SystemUser | Member): string => {
     if ('full_name' in user) {

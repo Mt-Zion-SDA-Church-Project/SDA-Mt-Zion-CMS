@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 import { UploadCloud, Images, Plus, Loader2, Search, Layers, Calendar, X, ChevronLeft, ChevronRight, Pencil, Trash2, Save, XCircle, Download, LayoutGrid, Image as ImageIcon } from 'lucide-react';
 
 interface EventItem {
@@ -25,11 +27,21 @@ interface PhotoItem {
 }
 
 const AdminGallery: React.FC = () => {
+  const queryClient = useQueryClient();
   const BUCKET_ID = (import.meta as any).env?.VITE_GALLERIES_BUCKET || 'galleries';
   const [activeTab, setActiveTab] = useState<'upload' | 'browse'>('upload');
 
   // Upload state
-  const [events, setEvents] = useState<EventItem[]>([]);
+  const { data: events = [] } = useQuery({
+    queryKey: queryKeys.events.list(),
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('events')
+        .select('id, title, event_date')
+        .order('event_date', { ascending: false });
+      return (data as EventItem[]) || [];
+    },
+  });
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [albumTitle, setAlbumTitle] = useState('');
   const [albumDescription, setAlbumDescription] = useState('');
@@ -39,14 +51,37 @@ const AdminGallery: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Browse state
-  const [galleries, setGalleries] = useState<GalleryItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { data: galleries = [], isPending: loading } = useQuery({
+    queryKey: queryKeys.galleries.admin(),
+    enabled: activeTab === 'browse',
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('galleries')
+        .select('id, title, description, cover_image_url, event_id, created_at')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data as GalleryItem[]) || [];
+    },
+  });
   const [search, setSearch] = useState('');
   
   // Album detail state
   const [selectedAlbum, setSelectedAlbum] = useState<GalleryItem | null>(null);
-  const [albumPhotos, setAlbumPhotos] = useState<PhotoItem[]>([]);
-  const [photosLoading, setPhotosLoading] = useState(false);
+  const galleryIdForPhotos = selectedAlbum?.id;
+  const { data: albumPhotos = [], isPending: photosLoading } = useQuery({
+    queryKey: queryKeys.galleries.photos(galleryIdForPhotos ?? '__none__'),
+    enabled: Boolean(galleryIdForPhotos),
+    queryFn: async () => {
+      const id = galleryIdForPhotos as string;
+      const { data, error } = await supabase
+        .from('gallery_photos')
+        .select('id, image_url, caption, created_at')
+        .eq('gallery_id', id)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data as PhotoItem[]) || [];
+    },
+  });
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
   // Edit/Delete state
@@ -61,61 +96,21 @@ const AdminGallery: React.FC = () => {
   const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
 
   useEffect(() => {
-    const loadEvents = async () => {
-      const { data } = await supabase
-        .from('events')
-        .select('id, title, event_date')
-        .order('event_date', { ascending: false });
-      setEvents((data as EventItem[]) || []);
-    };
-    loadEvents();
-  }, []);
-
-  const loadGalleries = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('galleries')
-      .select('id, title, description, cover_image_url, event_id, created_at')
-      .order('created_at', { ascending: false });
-    if (!error) setGalleries((data as GalleryItem[]) || []);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    if (activeTab === 'browse') {
-      loadGalleries();
-      const channel = supabase
-        .channel('galleries-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'galleries' }, () => loadGalleries())
-        .subscribe();
-      return () => { supabase.removeChannel(channel); };
-    }
-  }, [activeTab]);
+    if (activeTab !== 'browse') return;
+    const channel = supabase
+      .channel('galleries-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'galleries' }, () => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.galleries.admin() });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [activeTab, queryClient]);
 
   const filteredGalleries = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return galleries;
     return galleries.filter(g => g.title.toLowerCase().includes(q) || (g.description || '').toLowerCase().includes(q));
   }, [search, galleries]);
-
-  const loadAlbumPhotos = async (albumId: string) => {
-    setPhotosLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('gallery_photos')
-        .select('id, image_url, caption, created_at')
-        .eq('gallery_id', albumId)
-        .order('created_at', { ascending: true });
-      
-      if (error) throw error;
-      setAlbumPhotos((data as PhotoItem[]) || []);
-    } catch (err) {
-      console.error('Error loading album photos:', err);
-      setAlbumPhotos([]);
-    } finally {
-      setPhotosLoading(false);
-    }
-  };
 
   const handleAlbumClick = async (album: GalleryItem) => {
     setSelectedAlbum(album);
@@ -126,12 +121,10 @@ const AdminGallery: React.FC = () => {
     setEditDescription(album.description || '');
     setEditEventId(album.event_id || '');
     setViewMode('single');
-    await loadAlbumPhotos(album.id);
   };
 
   const closeAlbumView = () => {
     setSelectedAlbum(null);
-    setAlbumPhotos([]);
     setCurrentPhotoIndex(0);
     setIsEditingAlbum(false);
     setDeleteConfirm(false);
@@ -151,22 +144,35 @@ const AdminGallery: React.FC = () => {
     setEditEventId(selectedAlbum.event_id || '');
   };
 
+  const saveAlbumMutation = useMutation({
+    mutationFn: async (vars: { id: string; title: string; description: string | null; event_id: string | null }) => {
+      const { error } = await supabase
+        .from('galleries')
+        .update({
+          title: vars.title,
+          description: vars.description,
+          event_id: vars.event_id,
+        })
+        .eq('id', vars.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.galleries.admin() });
+    },
+  });
+
   const onSaveEditAlbum = async () => {
     if (!selectedAlbum) return;
     const newTitle = editTitle.trim();
     if (!newTitle) return;
     setEditSaving(true);
     try {
-      const { error } = await supabase
-        .from('galleries')
-        .update({
-          title: newTitle,
-          description: editDescription.trim() || null,
-          event_id: editEventId || null,
-        })
-        .eq('id', selectedAlbum.id);
-      if (error) throw error;
-      // reflect local state
+      await saveAlbumMutation.mutateAsync({
+        id: selectedAlbum.id,
+        title: newTitle,
+        description: editDescription.trim() || null,
+        event_id: editEventId || null,
+      });
       const updated: GalleryItem = {
         ...selectedAlbum,
         title: newTitle,
@@ -174,8 +180,6 @@ const AdminGallery: React.FC = () => {
         event_id: editEventId || null,
       } as GalleryItem;
       setSelectedAlbum(updated);
-      // refresh list view
-      await loadGalleries();
       setIsEditingAlbum(false);
     } catch (err) {
       console.error('Failed to update album', err);
@@ -184,15 +188,12 @@ const AdminGallery: React.FC = () => {
     }
   };
 
-  const onDeleteAlbum = async () => {
-    if (!selectedAlbum) return;
-    setDeleting(true);
-    try {
-      // 1) Fetch all photo paths to remove from storage
+  const deleteAlbumMutation = useMutation({
+    mutationFn: async (albumId: string) => {
       const { data: photos, error: pErr } = await supabase
         .from('gallery_photos')
         .select('image_path')
-        .eq('gallery_id', selectedAlbum.id);
+        .eq('gallery_id', albumId);
       if (pErr) throw pErr;
       const paths = (photos || [])
         .map((p: any) => p.image_path)
@@ -203,22 +204,29 @@ const AdminGallery: React.FC = () => {
         if (rmErr) console.warn('Some images may not have been removed from storage:', rmErr);
       }
 
-      // 2) Delete photo rows
       const { error: delPhotosErr } = await supabase
         .from('gallery_photos')
         .delete()
-        .eq('gallery_id', selectedAlbum.id);
+        .eq('gallery_id', albumId);
       if (delPhotosErr) throw delPhotosErr;
 
-      // 3) Delete gallery row
       const { error: delGalleryErr } = await supabase
         .from('galleries')
         .delete()
-        .eq('id', selectedAlbum.id);
+        .eq('id', albumId);
       if (delGalleryErr) throw delGalleryErr;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.galleries.admin() });
+    },
+  });
 
-      // refresh grid and close modal
-      await loadGalleries();
+  const onDeleteAlbum = async () => {
+    if (!selectedAlbum) return;
+    setDeleting(true);
+    try {
+      await deleteAlbumMutation.mutateAsync(selectedAlbum.id);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.galleries.photos(selectedAlbum.id) });
       closeAlbumView();
     } catch (err) {
       console.error('Failed to delete album', err);
@@ -267,6 +275,62 @@ const AdminGallery: React.FC = () => {
     setFiles(e.target.files);
   };
 
+  const createAlbumMutation = useMutation({
+    mutationFn: async (vars: {
+      albumTitle: string;
+      albumDescription: string;
+      selectedEventId: string;
+      files: FileList;
+      bucketId: string;
+    }) => {
+      const { data: inserted, error: gErr } = await supabase
+        .from('galleries')
+        .insert({
+          title: vars.albumTitle.trim(),
+          description: vars.albumDescription.trim() || null,
+          event_id: vars.selectedEventId || null,
+        })
+        .select()
+        .single();
+      if (gErr) throw gErr;
+
+      const galleryId = inserted.id as string;
+      let firstUrl: string | null = null;
+      for (let i = 0; i < vars.files.length; i++) {
+        const file = vars.files[i];
+        const ext = file.name.split('.').pop();
+        const path = `${galleryId}/${Date.now()}_${i}.${ext}`;
+        const { error: upErr } = await supabase.storage.from(vars.bucketId).upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || 'image/jpeg'
+        });
+        if (upErr) throw upErr;
+
+        const { data: pub } = supabase.storage.from(vars.bucketId).getPublicUrl(path);
+        const imageUrl = pub?.publicUrl as string;
+        if (!firstUrl) firstUrl = imageUrl;
+
+        await supabase.from('gallery_photos').insert({
+          gallery_id: galleryId,
+          event_id: vars.selectedEventId || null,
+          image_url: imageUrl,
+          image_path: path,
+        });
+      }
+
+      if (firstUrl) {
+        await supabase
+          .from('galleries')
+          .update({ cover_image_url: firstUrl, cover_image_path: `${galleryId}` })
+          .eq('id', galleryId);
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.galleries.admin() });
+    },
+  });
+
   const onCreateAlbumAndUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     setUploadError(null);
@@ -281,54 +345,13 @@ const AdminGallery: React.FC = () => {
     }
     setUploading(true);
     try {
-      // 1) Create gallery (album)
-      const { data: inserted, error: gErr } = await supabase
-        .from('galleries')
-        .insert({
-          title: albumTitle.trim(),
-          description: albumDescription.trim() || null,
-          event_id: selectedEventId || null,
-        })
-        .select()
-        .single();
-      if (gErr) throw gErr;
-
-      const galleryId = inserted.id as string;
-      // 2) Upload images to storage and insert records
-      const uploadedFirstUrl: string | null = await (async () => {
-        let firstUrl: string | null = null;
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const ext = file.name.split('.').pop();
-          const path = `${galleryId}/${Date.now()}_${i}.${ext}`;
-          const { error: upErr } = await supabase.storage.from(BUCKET_ID).upload(path, file, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: file.type || 'image/jpeg'
-          });
-          if (upErr) throw upErr;
-
-          const { data: pub } = supabase.storage.from(BUCKET_ID).getPublicUrl(path);
-          const imageUrl = pub?.publicUrl as string;
-          if (!firstUrl) firstUrl = imageUrl;
-
-          await supabase.from('gallery_photos').insert({
-            gallery_id: galleryId,
-            event_id: selectedEventId || null,
-            image_url: imageUrl,
-            image_path: path,
-          });
-        }
-        return firstUrl;
-      })();
-
-      if (uploadedFirstUrl) {
-        await supabase
-          .from('galleries')
-          .update({ cover_image_url: uploadedFirstUrl, cover_image_path: `${galleryId}` })
-          .eq('id', galleryId);
-      }
-
+      await createAlbumMutation.mutateAsync({
+        albumTitle,
+        albumDescription,
+        selectedEventId,
+        files,
+        bucketId: BUCKET_ID,
+      });
       setSuccessMsg('Album created and photos uploaded successfully');
       setAlbumTitle('');
       setAlbumDescription('');

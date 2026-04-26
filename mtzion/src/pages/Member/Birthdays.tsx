@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
 import { Heart, Calendar, Filter, Search, Gift, Cake } from 'lucide-react';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 
@@ -10,85 +12,102 @@ interface Birthday {
   date_of_birth: string;
   email?: string;
   phone?: string;
+  upcomingDate: Date;
+  daysUntil: number;
+  month: number;
+  day: number;
+}
+
+async function fetchMembersWithBirthdays(): Promise<
+  Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+    date_of_birth: string;
+    email?: string;
+    phone?: string;
+  }>
+> {
+  const { data, error: fetchError } = await supabase
+    .from('members')
+    .select('id, first_name, last_name, date_of_birth, email, phone')
+    .not('date_of_birth', 'is', null)
+    .order('date_of_birth', { ascending: true });
+  if (fetchError) throw fetchError;
+  return data || [];
 }
 
 const MemberBirthdays: React.FC = () => {
-  const [birthdays, setBirthdays] = useState<Birthday[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [filterTimeframe, setFilterTimeframe] = useState<string>('upcoming');
 
+  const rawQuery = useQuery({
+    queryKey: queryKeys.memberPortal.birthdaysMembers(),
+    queryFn: fetchMembersWithBirthdays,
+  });
+
+  const loading = rawQuery.isPending;
+  const error = rawQuery.error ? (rawQuery.error as Error).message : null;
+
   useEffect(() => {
-    loadBirthdays();
-  }, [filterMonth, filterTimeframe]);
+    const channel = supabase
+      .channel('member-birthdays-members')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.birthdaysMembers() });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
-  const loadBirthdays = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const birthdays = useMemo(() => {
+    const data = rawQuery.data;
+    if (!data) return [];
 
-      const { data, error: fetchError } = await supabase
-        .from('members')
-        .select('id, first_name, last_name, date_of_birth, email, phone')
-        .not('date_of_birth', 'is', null)
-        .order('date_of_birth', { ascending: true });
+    const processedBirthdays: Birthday[] = data.map((member) => {
+      const birthDate = new Date(member.date_of_birth);
+      const today = new Date();
+      const thisYear = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+      const nextYear = new Date(today.getFullYear() + 1, birthDate.getMonth(), birthDate.getDate());
 
-      if (fetchError) throw fetchError;
+      const upcomingDate = thisYear > today ? thisYear : nextYear;
+      const daysUntil = Math.ceil((upcomingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-      // Process birthdays to calculate upcoming dates
-      const processedBirthdays = (data || []).map(member => {
-        const birthDate = new Date(member.date_of_birth);
-        const today = new Date();
-        const thisYear = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
-        const nextYear = new Date(today.getFullYear() + 1, birthDate.getMonth(), birthDate.getDate());
-        
-        const upcomingDate = thisYear > today ? thisYear : nextYear;
-        const daysUntil = Math.ceil((upcomingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        
-        return {
-          ...member,
-          upcomingDate,
-          daysUntil,
-          month: birthDate.getMonth(),
-          day: birthDate.getDate()
-        };
-      });
+      return {
+        ...member,
+        upcomingDate,
+        daysUntil,
+        month: birthDate.getMonth(),
+        day: birthDate.getDate(),
+      };
+    });
 
-      // Filter by timeframe - default to next 7 days
-      let filteredBirthdays = processedBirthdays;
-      if (filterTimeframe === 'upcoming') {
-        filteredBirthdays = processedBirthdays.filter(b => b.daysUntil >= 0 && b.daysUntil <= 7);
-      } else if (filterTimeframe === 'this_month') {
-        const currentMonth = new Date().getMonth();
-        filteredBirthdays = processedBirthdays.filter(b => b.month === currentMonth);
-      } else if (filterTimeframe === 'next_month') {
-        const nextMonth = (new Date().getMonth() + 1) % 12;
-        filteredBirthdays = processedBirthdays.filter(b => b.month === nextMonth);
-      }
-
-      // Filter by month
-      if (filterMonth !== 'all') {
-        const monthIndex = parseInt(filterMonth);
-        filteredBirthdays = filteredBirthdays.filter(b => b.month === monthIndex);
-      }
-
-      // Sort by days until birthday
-      filteredBirthdays.sort((a, b) => a.daysUntil - b.daysUntil);
-
-      setBirthdays(filteredBirthdays);
-
-    } catch (err: any) {
-      setError(err.message || 'Failed to load birthdays');
-    } finally {
-      setLoading(false);
+    let filteredBirthdays = processedBirthdays;
+    if (filterTimeframe === 'upcoming') {
+      filteredBirthdays = processedBirthdays.filter((b) => b.daysUntil >= 0 && b.daysUntil <= 7);
+    } else if (filterTimeframe === 'this_month') {
+      const currentMonth = new Date().getMonth();
+      filteredBirthdays = processedBirthdays.filter((b) => b.month === currentMonth);
+    } else if (filterTimeframe === 'next_month') {
+      const nextMonth = (new Date().getMonth() + 1) % 12;
+      filteredBirthdays = processedBirthdays.filter((b) => b.month === nextMonth);
     }
-  };
 
-  const filteredBirthdays = birthdays.filter(birthday => {
+    if (filterMonth !== 'all') {
+      const monthIndex = parseInt(filterMonth, 10);
+      filteredBirthdays = filteredBirthdays.filter((b) => b.month === monthIndex);
+    }
+
+    filteredBirthdays.sort((a, b) => a.daysUntil - b.daysUntil);
+    return filteredBirthdays;
+  }, [rawQuery.data, filterMonth, filterTimeframe]);
+
+  const filteredBirthdays = birthdays.filter((birthday) => {
     if (!searchQuery.trim()) return true;
-    
+
     const searchTerm = searchQuery.toLowerCase();
     return (
       birthday.first_name.toLowerCase().includes(searchTerm) ||
@@ -114,8 +133,18 @@ const MemberBirthdays: React.FC = () => {
 
   const getMonthName = (monthIndex: number) => {
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return months[monthIndex];
   };
@@ -127,7 +156,6 @@ const MemberBirthdays: React.FC = () => {
   return (
     <div className="p-6 space-y-6">
       <MemberMobileNav title="Birthdays" />
-      {/* Header */}
       <div className="flex items-center gap-3">
         <Heart className="w-8 h-8 text-primary" />
         <div>
@@ -136,55 +164,46 @@ const MemberBirthdays: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">This Month</p>
-              <p className="text-2xl font-bold text-blue-600">
-                {birthdays.filter(b => b.month === new Date().getMonth()).length}
-              </p>
+              <p className="text-2xl font-bold text-blue-600">{birthdays.filter((b) => b.month === new Date().getMonth()).length}</p>
             </div>
             <Calendar className="w-8 h-8 text-blue-600" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Next 7 Days</p>
-              <p className="text-2xl font-bold text-orange-600">
-                {birthdays.filter(b => b.daysUntil >= 0 && b.daysUntil <= 7).length}
-              </p>
+              <p className="text-2xl font-bold text-orange-600">{birthdays.filter((b) => b.daysUntil >= 0 && b.daysUntil <= 7).length}</p>
             </div>
             <Cake className="w-8 h-8 text-orange-600" />
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Members</p>
-              <p className="text-2xl font-bold text-green-600">
-                {birthdays.length}
-              </p>
+              <p className="text-2xl font-bold text-green-600">{birthdays.length}</p>
             </div>
             <Gift className="w-8 h-8 text-green-600" />
           </div>
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border p-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex items-center gap-2 text-gray-800">
             <Filter className="w-5 h-5 text-primary" />
             <h3 className="text-lg font-semibold">Filters</h3>
           </div>
-          
+
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            {/* Search */}
             <div className="relative">
               <Search className="w-4 h-4 text-gray-400 absolute left-2 top-2.5" />
               <input
@@ -195,7 +214,6 @@ const MemberBirthdays: React.FC = () => {
               />
             </div>
 
-            {/* Timeframe Filter */}
             <select
               value={filterTimeframe}
               onChange={(e) => setFilterTimeframe(e.target.value)}
@@ -207,12 +225,7 @@ const MemberBirthdays: React.FC = () => {
               <option value="all">All Birthdays</option>
             </select>
 
-            {/* Month Filter */}
-            <select
-              value={filterMonth}
-              onChange={(e) => setFilterMonth(e.target.value)}
-              className="border rounded-md px-3 py-2 text-sm"
-            >
+            <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} className="border rounded-md px-3 py-2 text-sm">
               <option value="all">All Months</option>
               {Array.from({ length: 12 }, (_, i) => (
                 <option key={i} value={i}>
@@ -224,24 +237,15 @@ const MemberBirthdays: React.FC = () => {
         </div>
       </div>
 
-      {/* Birthdays List */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         <div className="px-5 py-4 border-b bg-gray-50">
           <h3 className="text-lg font-semibold text-gray-800">Birthdays</h3>
         </div>
 
         <div className="p-4">
-          {error && (
-            <div className="text-sm text-red-600 mb-4 p-3 bg-red-50 rounded-md">
-              {error}
-            </div>
-          )}
-          
-          {loading && (
-            <div className="text-sm text-gray-600 mb-4 p-3 bg-gray-50 rounded-md">
-              Loading birthdays...
-            </div>
-          )}
+          {error && <div className="text-sm text-red-600 mb-4 p-3 bg-red-50 rounded-md">{error}</div>}
+
+          {loading && <div className="text-sm text-gray-600 mb-4 p-3 bg-gray-50 rounded-md">Loading birthdays...</div>}
 
           <div className="space-y-3">
             {filteredBirthdays.length === 0 ? (
@@ -254,14 +258,15 @@ const MemberBirthdays: React.FC = () => {
               </div>
             ) : (
               filteredBirthdays.map((birthday) => (
-                <div key={birthday.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                <div
+                  key={birthday.id}
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                >
                   <div className="flex items-center space-x-4">
                     <div className="w-12 h-12 bg-gradient-to-br from-pink-100 to-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-pink-600 font-bold text-lg">
-                        {getInitials(birthday.first_name, birthday.last_name)}
-                      </span>
+                      <span className="text-pink-600 font-bold text-lg">{getInitials(birthday.first_name, birthday.last_name)}</span>
                     </div>
-                    
+
                     <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-gray-900 truncate">
                         {birthday.first_name} {birthday.last_name}
@@ -271,9 +276,7 @@ const MemberBirthdays: React.FC = () => {
                           <Calendar className="w-4 h-4" />
                           {getMonthName(birthday.month)} {birthday.day}
                         </span>
-                        {birthday.email && (
-                          <span className="truncate">{birthday.email}</span>
-                        )}
+                        {birthday.email && <span className="truncate">{birthday.email}</span>}
                       </div>
                     </div>
                   </div>
@@ -282,7 +285,7 @@ const MemberBirthdays: React.FC = () => {
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${getDaysUntilColor(birthday.daysUntil)}`}>
                       {getDaysUntilText(birthday.daysUntil)}
                     </span>
-                    
+
                     {birthday.daysUntil === 0 && (
                       <div className="flex items-center gap-1 text-red-600">
                         <Cake className="w-4 h-4" />
@@ -295,15 +298,12 @@ const MemberBirthdays: React.FC = () => {
             )}
           </div>
 
-          {/* Footer */}
           <div className="mt-6 flex items-center justify-between text-sm text-gray-600">
             <div>
               Showing {filteredBirthdays.length} of {birthdays.length} birthdays
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">
-                Last updated: {new Date().toLocaleTimeString()}
-              </span>
+              <span className="text-xs text-gray-500">Last updated: {new Date().toLocaleTimeString()}</span>
             </div>
           </div>
         </div>
@@ -313,5 +313,3 @@ const MemberBirthdays: React.FC = () => {
 };
 
 export default MemberBirthdays;
-
-

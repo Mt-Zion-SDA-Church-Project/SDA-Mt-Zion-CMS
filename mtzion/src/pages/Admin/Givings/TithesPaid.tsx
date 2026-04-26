@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
+import { queryKeys } from '../../../lib/queryKeys';
 import logo from '../../../assets/sda-logo.png';
 
 function formatUGX(amount: number): string {
@@ -11,45 +13,39 @@ function formatUGX(amount: number): string {
 }
 
 const TithesPaid: React.FC = () => {
-  const [loadingSummaries, setLoadingSummaries] = useState<boolean>(false);
-  const [summaries, setSummaries] = useState<Array<{ id: string; service_date: string; total: number }>>([]);
+  const queryClient = useQueryClient();
+  const { data: summaries = [], isPending: loadingSummaries, refetch: fetchSummaries } = useQuery({
+    queryKey: queryKeys.tithes.cashOfferingAccounts(),
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from('cash_offering_accounts')
+          .select('id, service_date, total')
+          .order('service_date', { ascending: false })
+          .limit(20);
+        if (error) throw error;
+        return (data || []).map((d) => ({ id: d.id as string, service_date: d.service_date as string, total: (d.total as unknown as number) || 0 }));
+      } catch (e) {
+        return [];
+      }
+    },
+  });
+
   const handlePrint = () => window.print();
 
-  const fetchSummaries = async () => {
-    setLoadingSummaries(true);
-    try {
-      const { data, error } = await supabase
-        .from('cash_offering_accounts')
-        .select('id, service_date, total')
-        .order('service_date', { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      setSummaries((data || []).map((d) => ({ id: d.id as string, service_date: d.service_date as string, total: (d.total as unknown as number) || 0 })));
-    } catch (e) {
-      // ignore for list
-    } finally {
-      setLoadingSummaries(false);
-    }
-  };
-
   useEffect(() => {
-    fetchSummaries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Realtime: refresh list when new summaries are inserted
-  useEffect(() => {
+    const inv = () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tithes.cashOfferingAccounts() });
+    };
     const channel = supabase
       .channel('cash_offering_accounts_rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cash_offering_accounts' }, () => {
-        fetchSummaries();
-      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cash_offering_accounts' }, inv)
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [queryClient]);
 
   const CATEGORY_COLUMNS: Array<{ key: string; label: string }> = [
     { key: 'trust_fund', label: 'Trust Fund' },

@@ -46,6 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Auth state change:', { event, session });
 
       if (event === 'TOKEN_REFRESHED') {
+        const uid = session?.user?.id;
+        if (uid) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.auth.profile(uid) });
+        }
         return;
       }
 
@@ -64,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { data: user, isPending: profilePending } = useQuery({
     queryKey: queryKeys.auth.profile(authUserId ?? 'none'),
     enabled: sessionReady && !!authUserId,
+    staleTime: 0,
     queryFn: async (): Promise<User | null> => {
       const userId = authUserId!;
       console.log('=== FETCH USER PROFILE START ===');
@@ -76,12 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('About to query system_users table...');
 
+        // Must not filter by is_active here: inactive rows must be detected so we do not
+        // fall through to members and incorrectly treat a deactivated portal user as logged in.
         const systemUserPromise = supabase
           .from('system_users')
           .select('*')
           .eq('user_id', userId)
-          .eq('is_active', true)
-          .single();
+          .maybeSingle();
 
         const { data: systemUser, error: systemError } = (await Promise.race([
           systemUserPromise,
@@ -118,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
         }
 
-        console.log('No system user found, trying members table...');
+        console.log('No system user row, trying members table...');
 
         const memberPromise = supabase
           .from('members')

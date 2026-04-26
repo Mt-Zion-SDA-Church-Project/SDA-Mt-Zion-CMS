@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Camera, XCircle, CheckCircle, Loader } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { queryKeys } from '../lib/queryKeys';
+import { assertEventCheckInAllowed } from '../lib/eventCheckInWindow';
 
 interface QRScannerProps {
   eventId?: string;
@@ -28,6 +29,16 @@ const QRScanner: React.FC<QRScannerProps> = ({ eventId, onScanSuccess, onScanErr
       if (memberError || !member) {
         throw new Error('Member not found');
       }
+
+      const { data: ev, error: evErr } = await supabase
+        .from('events')
+        .select('id, title, event_date, end_date')
+        .eq('id', vars.eventId)
+        .single();
+      if (evErr || !ev) {
+        throw new Error('Event not found');
+      }
+      assertEventCheckInAllowed(ev);
 
       const { data: existingCheckIn } = await supabase
         .from('attendance')

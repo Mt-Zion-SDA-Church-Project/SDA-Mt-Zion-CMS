@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { queryKeys } from '../../lib/queryKeys';
+import { assertEventCheckInAllowed, assertQrCheckInStartAllowed } from '../../lib/eventCheckInWindow';
 import { QrCode, CheckCircle, Clock, Calendar, MapPin, XCircle } from 'lucide-react';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 import PageLoader from '../../components/Layout/PageLoader';
@@ -137,17 +138,44 @@ const MemberQRCheckIn: React.FC = () => {
 
       const { data: event, error: eventError } = await supabase
         .from('events')
-        .select('id, title, event_date, location, event_type')
+        .select('id, title, event_date, end_date, location, event_type')
         .eq('id', payload.eventId)
         .single();
 
-      if (eventError) {
+      if (eventError || !event) {
         throw new Error('Event not found. Please contact an administrator.');
       }
 
+      assertQrCheckInStartAllowed({
+        title: event.title,
+        event_date: String(event.event_date),
+        payloadStartsAt: payload.startsAt,
+      });
+
+      assertEventCheckInAllowed(event);
+
       let successMessage = '';
 
+      let latestEvent = event;
+
       await runWithCheckInLock(user.id, payload.eventId, async () => {
+        const { data: evFresh, error: evFreshErr } = await supabase
+          .from('events')
+          .select('id, title, event_date, end_date, location, event_type')
+          .eq('id', payload.eventId)
+          .single();
+
+        if (evFreshErr || !evFresh) {
+          throw new Error('Event not found. Please try again.');
+        }
+        latestEvent = evFresh;
+        assertQrCheckInStartAllowed({
+          title: evFresh.title,
+          event_date: String(evFresh.event_date),
+          payloadStartsAt: payload.startsAt,
+        });
+        assertEventCheckInAllowed(evFresh);
+
         const { data: existingRows } = await supabase
           .from('attendance')
           .select('id')
@@ -156,7 +184,7 @@ const MemberQRCheckIn: React.FC = () => {
           .limit(1);
 
         if (existingRows && existingRows.length > 0) {
-          successMessage = `You're already checked in for "${event.title}", ${member.first_name}. Welcome!`;
+          successMessage = `You're already checked in for "${evFresh.title}", ${member.first_name}. Welcome!`;
           localStorage.removeItem('pendingCheckIn');
           return;
         }
@@ -165,7 +193,7 @@ const MemberQRCheckIn: React.FC = () => {
           member_id: member.id,
           event_id: payload.eventId,
           attendance_date: new Date().toISOString().split('T')[0],
-          attendance_type: mapEventTypeToAttendanceType(event.event_type),
+          attendance_type: mapEventTypeToAttendanceType(evFresh.event_type),
           check_in_time: new Date().toISOString(),
           qr_scanned: true,
           created_at: new Date().toISOString(),
@@ -179,7 +207,7 @@ const MemberQRCheckIn: React.FC = () => {
             msg.includes('unique constraint');
 
           if (isUniqueViolation) {
-            successMessage = `You're already checked in for "${event.title}", ${member.first_name}. Welcome!`;
+            successMessage = `You're already checked in for "${evFresh.title}", ${member.first_name}. Welcome!`;
             localStorage.removeItem('pendingCheckIn');
             return;
           }
@@ -190,14 +218,14 @@ const MemberQRCheckIn: React.FC = () => {
           );
         }
 
-        successMessage = `Welcome, ${member.first_name}! You have successfully checked in to "${event.title}".`;
+        successMessage = `Welcome, ${member.first_name}! You have successfully checked in to "${evFresh.title}".`;
         localStorage.removeItem('pendingCheckIn');
       });
 
       return {
         outcome: 'success' as const,
         message: successMessage,
-        eventDetails: event as Record<string, unknown>,
+        eventDetails: latestEvent as Record<string, unknown>,
         memberName: `${member.first_name} ${member.last_name}`,
       };
     },

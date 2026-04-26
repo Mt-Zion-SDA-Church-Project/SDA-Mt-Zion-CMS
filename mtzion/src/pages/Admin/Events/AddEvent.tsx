@@ -321,6 +321,7 @@ const AddEvent: React.FC = () => {
                 eventId={selectedEventForQR.id}
                 eventTitle={selectedEventForQR.title}
                 eventDate={selectedEventForQR.event_date}
+                endDate={selectedEventForQR.end_date ?? null}
                 onQRGenerated={(qrCode) => {
                   // Optionally save QR code to database
                   console.log('QR Code generated:', qrCode);

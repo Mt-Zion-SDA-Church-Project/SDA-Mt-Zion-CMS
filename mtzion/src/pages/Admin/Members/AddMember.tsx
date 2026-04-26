@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
+import { formatZodError, addMemberFormSchema } from '../../../lib/validation';
 
 const AddMember: React.FC = () => {
   const [form, setForm] = useState({
@@ -270,8 +271,18 @@ const AddMember: React.FC = () => {
     setError(null);
     setSuccess(null);
 
+    const parsed = addMemberFormSchema.safeParse(form);
+    if (!parsed.success) {
+      setSubmitting(false);
+      setError(formatZodError(parsed.error));
+      return;
+    }
+
     try {
-      const { usedPlaceFallback, ministryErr } = await submitMutation.mutateAsync({ form, ministryOptions });
+      const { usedPlaceFallback, ministryErr } = await submitMutation.mutateAsync({
+        form: parsed.data,
+        ministryOptions,
+      });
       if (usedPlaceFallback) {
         setSuccess('Member created (note: run DB migration to add place_of_birth).');
       }

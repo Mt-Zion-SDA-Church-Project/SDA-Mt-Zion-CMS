@@ -160,16 +160,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         { icon: UserPlus, label: 'Add Visitor', path: '/admin/visitors/add' },
       ]
     },
-    { 
-      icon: DollarSign, 
-      label: 'Offertory', 
+    {
+      icon: DollarSign,
+      label: 'Offertory',
       path: '/admin/givings',
-      tabName: 'offertory',
       hasSubmenu: true,
       submenu: [
-        { icon: Gift, label: 'Offertory Paid', path: '/admin/givings/tithes' },
-        { icon: UserPlus, label: 'Add Offertory', path: '/admin/givings/tithes/add' },
-      ]
+        { icon: Gift, label: 'Offertory Paid', path: '/admin/givings/tithes', tabName: 'financial_summaries' },
+        { icon: UserPlus, label: 'Add Offertory', path: '/admin/givings/tithes/add', tabName: 'offertory' },
+      ],
     },
     { 
       icon: Settings, 
@@ -224,11 +223,32 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
     { icon: Images, label: 'Gallery', path: '/member/gallery', tabName: 'gallery' },
   ];
 
-  // Filter menu items based on user privileges
-  const filteredMenuItems = (isAdmin ? adminMenuItems : memberMenuItems).filter(item => {
-    if (!item.tabName) return true; // Always show items without tabName
+  type SubmenuEntry = { icon: typeof Home; label: string; path: string; tabName?: string };
+  type AdminMenuItem = (typeof adminMenuItems)[number];
+
+  const filterSubmenu = (item: { submenu?: SubmenuEntry[]; tabName?: string }) =>
+    (item.submenu ?? []).filter((sub) => {
+      const tn = sub.tabName ?? item.tabName;
+      if (!tn) return true;
+      return hasPrivilege(tn);
+    });
+
+  const menuItemVisible = (item: AdminMenuItem): boolean => {
+    if (item.hasSubmenu && item.submenu?.length) {
+      return item.submenu.some((sub) => {
+        const tn = (sub as SubmenuEntry).tabName ?? item.tabName;
+        if (!tn) return true;
+        return hasPrivilege(tn);
+      });
+    }
+    if (!item.tabName) return true;
     return hasPrivilege(item.tabName);
-  });
+  };
+
+  // Filter menu items based on user privileges (including per-submenu tab names)
+  const filteredMenuItems = (isAdmin ? adminMenuItems : memberMenuItems).filter((item) =>
+    isAdmin ? menuItemVisible(item as AdminMenuItem) : !item.tabName || hasPrivilege(item.tabName)
+  );
 
   return (
     <div className={`bg-primary text-white h-screen transition-all duration-300 ${
@@ -271,7 +291,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                 </button>
                 {isMembersExpanded && !isCollapsed && (
                   <div className="ml-6 mt-1">
-                    {item.submenu?.map((subItem) => (
+                    {filterSubmenu(item).map((subItem) => (
                       <NavLink
                         key={subItem.path}
                         to={subItem.path}
@@ -310,7 +330,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                 </button>
                 {isTeensExpanded && !isCollapsed && (
                   <div className="ml-6 mt-1">
-                    {item.submenu?.map((subItem) => (
+                    {filterSubmenu(item).map((subItem) => (
                       <NavLink
                         key={subItem.path}
                         to={subItem.path}
@@ -349,7 +369,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                 </button>
                 {isVisitorsExpanded && !isCollapsed && (
                   <div className="ml-6 mt-1">
-                    {item.submenu?.map((subItem) => (
+                    {filterSubmenu(item).map((subItem) => (
                       <NavLink
                         key={subItem.path}
                         to={subItem.path}
@@ -388,7 +408,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                 </button>
                 {isGivingsExpanded && !isCollapsed && (
                   <div className="ml-6 mt-1">
-                    {item.submenu?.map((subItem) => (
+                    {filterSubmenu(item).map((subItem) => (
                       <NavLink
                         key={subItem.path}
                         to={subItem.path}
@@ -427,7 +447,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                 </button>
                 {isSystemExpanded && !isCollapsed && (
                   <div className="ml-6 mt-1">
-                    {item.submenu?.map((subItem) => (
+                    {filterSubmenu(item).map((subItem) => (
                       <NavLink
                         key={subItem.path}
                         to={subItem.path}
@@ -466,7 +486,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                 </button>
                 {isLogsExpanded && !isCollapsed && (
                   <div className="ml-6 mt-1">
-                    {item.submenu?.map((subItem) => (
+                    {filterSubmenu(item).map((subItem) => (
                       <NavLink
                         key={subItem.path}
                         to={subItem.path}
@@ -505,7 +525,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                 </button>
                 {isEventsExpanded && !isCollapsed && (
                   <div className="ml-6 mt-1">
-                    {item.submenu?.map((subItem) => (
+                    {filterSubmenu(item).map((subItem) => (
                       <NavLink
                         key={subItem.path}
                         to={subItem.path}

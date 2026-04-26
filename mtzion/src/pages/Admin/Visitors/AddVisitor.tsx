@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
+import { formatZodError, visitorFormSchema } from '../../../lib/validation';
 
 const VISITORS_LIST_LIMIT = 100;
 
@@ -69,20 +70,20 @@ const AddVisitor: React.FC = () => {
     setSubmitting(true);
     setMessage(null);
     setError(null);
-    // Client-side required validation
-    if (!form.firstName || !form.lastName || !form.phone || !form.email || !form.address || !form.dateOfBirth) {
+    const parsed = visitorFormSchema.safeParse(form);
+    if (!parsed.success) {
       setSubmitting(false);
-      setError('All fields are required. Please fill in every field.');
+      setError(formatZodError(parsed.error));
       return;
     }
     try {
       const payload: Record<string, unknown> = {
-        first_name: form.firstName,
-        last_name: form.lastName || null,
-        phone: form.phone || null,
-        email: form.email || null,
-        address: form.address || null,
-        date_of_birth: form.dateOfBirth || null,
+        first_name: parsed.data.firstName,
+        last_name: parsed.data.lastName || null,
+        phone: parsed.data.phone || null,
+        email: parsed.data.email || null,
+        address: parsed.data.address || null,
+        date_of_birth: parsed.data.dateOfBirth || null,
       };
       await saveMutation.mutateAsync({ editingId, payload });
       setMessage(editingId ? 'Visitor updated' : 'Visitor saved');

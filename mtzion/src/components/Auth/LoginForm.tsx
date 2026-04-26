@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { formatZodError, loginSchema } from '../../lib/validation';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../../assets/sda-logo.png';
 import zion1 from '../../assets/zion-1.jpg';
@@ -56,8 +57,15 @@ const LoginForm: React.FC = () => {
     setLoading(true);
     setError('');
 
+    const parsed = loginSchema.safeParse({ email, password });
+    if (!parsed.success) {
+      setLoading(false);
+      setError(formatZodError(parsed.error));
+      return;
+    }
+
     try {
-      await signIn(email, password);
+      await signIn(parsed.data.email, parsed.data.password);
     } catch (err: any) {
       setError(err.message || 'Failed to sign in');
     } finally {

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
+import { ChevronDown, ChevronRight, Download, FileText } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -32,10 +33,109 @@ type KPI = {
   attendanceThisMonth: number;
 };
 
+type MemberFamilyRow = {
+  id: string;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
+  status: string;
+  member_number: string;
+  family_id: string | null;
+  families: { id: string; family_name: string } | null;
+};
+
+type FamilyGroup = {
+  key: string;
+  familyId: string | null;
+  familyName: string;
+  members: MemberFamilyRow[];
+};
+
+function memberDisplayName(m: MemberFamilyRow): string {
+  const mid = m.middle_name?.trim();
+  return [m.first_name, mid, m.last_name].filter(Boolean).join(' ');
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildMembersByFamilyCsv(rows: MemberFamilyRow[]): string {
+  const headers = ['Family name', 'Last name', 'First name', 'Middle name', 'Member number', 'Status'];
+  const csvData = rows.map((m) => {
+    const fam = m.families?.family_name?.trim() || (m.family_id ? 'Unknown family' : 'No family assigned');
+    return [fam, m.last_name, m.first_name, m.middle_name || '', m.member_number, m.status];
+  });
+  const csv = [headers, ...csvData]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  return csv;
+}
+
+function buildGroupedRosterHtml(title: string, groups: FamilyGroup[]): string {
+  const blocks = groups
+    .map(
+      (g) => `
+    <section class="family-block">
+      <h2>${escapeHtml(g.familyName)} <span class="count">(${g.members.length})</span></h2>
+      <table>
+        <thead><tr><th>Name</th><th>Member #</th><th>Status</th></tr></thead>
+        <tbody>
+          ${g.members
+            .map(
+              (m) =>
+                `<tr><td>${escapeHtml(memberDisplayName(m))}</td><td>${escapeHtml(m.member_number || '')}</td><td>${escapeHtml(m.status || '')}</td></tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </section>`
+    )
+    .join('\n');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; color: #111; }
+    h1 { font-size: 1.35rem; margin-bottom: 8px; }
+    .meta { color: #555; font-size: 0.9rem; margin-bottom: 24px; }
+    .family-block { margin-bottom: 28px; page-break-inside: avoid; }
+    .family-block h2 { font-size: 1.05rem; margin: 0 0 8px 0; border-bottom: 2px solid #0d9488; padding-bottom: 4px; }
+    .count { font-weight: normal; color: #666; font-size: 0.95rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+    th { background: #f8fafc; }
+    @media print { body { margin: 12mm; } }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <p class="meta">Generated ${escapeHtml(new Date().toLocaleString())}</p>
+  ${blocks}
+</body>
+</html>`;
+}
+
 const Reports: React.FC = () => {
   const [from, setFrom] = useState<string>('');
   const [to, setTo] = useState<string>('');
-  const [tab, setTab] = useState<'summary' | 'members' | 'attendance' | 'offertory' | 'visitors' | 'ministries'>('summary');
+  const [tab, setTab] = useState<'summary' | 'members' | 'attendance' | 'offertory' | 'visitors' | 'families'>('summary');
+  const [expandedFamilyIds, setExpandedFamilyIds] = useState<Set<string>>(() => new Set());
   const rangeKey = `${from}|${to}`;
   const queryClient = useQueryClient();
 
@@ -69,46 +169,87 @@ const Reports: React.FC = () => {
         attendanceThisMonth: attendanceCount || 0,
       };
 
-      const [membersRows, attendanceRows, visitorRows, ministryRows, offeringsRows, sabbathOfferingsRows, ministriesWithMembersRows, sabbathVisitorsRows] = await Promise.all([
+      const [
+        membersRows,
+        attendanceRows,
+        visitorRows,
+        offeringsRows,
+        sabbathOfferingsRows,
+        familiesRows,
+        sabbathVisitorsRows,
+        membersForFamilyRows,
+      ] = await Promise.all([
         supabase.from('members').select('id, first_name, last_name, status, created_at').order('created_at', { ascending: false }).limit(25),
         supabase.from('attendance').select('id, attendance_date').order('attendance_date', { ascending: false }).limit(25),
         supabase.from('visitors').select('id, full_name, visit_date').order('visit_date', { ascending: false }).limit(25),
-        supabase.from('ministries').select('id, name, description, created_at').order('created_at', { ascending: false }),
         supabase.from('offerings').select('id, amount, offering_date').gte('offering_date', start).lte('offering_date', end).order('offering_date', { ascending: false }).limit(25),
         supabase.from('cash_offering_accounts').select('service_date, total').gte('service_date', start).lte('service_date', end).order('service_date', { ascending: true }),
-        supabase.from('ministries').select(`
-          id, 
-          name, 
-          created_at,
-          member_ministries(count)
-        `).order('created_at', { ascending: false }),
-        supabase.from('visitors').select('visit_date').gte('visit_date', start).lte('visit_date', end).order('visit_date', { ascending: true })
+        supabase
+          .from('families')
+          .select('id, family_name, created_at, members(count)')
+          .order('family_name', { ascending: true }),
+        supabase.from('visitors').select('visit_date').gte('visit_date', start).lte('visit_date', end).order('visit_date', { ascending: true }),
+        // Load members without embedding families (same pattern as Members list). Nested
+        // `families(...)` selects can return empty rows while `families.members(count)` still works.
+        supabase
+          .from('members')
+          .select('id, first_name, middle_name, last_name, status, member_number, family_id'),
       ]);
-
-      // Debug ministries data
-      console.log('Ministries query result:', ministryRows);
-      console.log('Ministries data:', ministryRows.data);
-      console.log('Ministries error:', ministryRows.error);
 
       const membersList = membersRows.data || [];
       const attendanceList = attendanceRows.data || [];
       const visitorsList = visitorRows.data || [];
-      const ministriesList = ministryRows.data || [];
       const offeringsList = offeringsRows.data || [];
       const sabbathOfferings = sabbathOfferingsRows.data || [];
       const sabbathVisitors = sabbathVisitorsRows.data || [];
-      const processedMinistries = (ministriesWithMembersRows.data || []).map((ministry: any) => ({
-        ...ministry,
-        memberCount: ministry.member_ministries?.[0]?.count || 0
-      })).sort((a, b) => b.memberCount - a.memberCount);
-      const ministriesWithMembers = processedMinistries;
+      if (familiesRows.error) throw familiesRows.error;
+      if (membersForFamilyRows.error) throw membersForFamilyRows.error;
+
+      const familiesList = (familiesRows.data || []).map((row: { id: string; family_name: string; created_at: string; members?: { count: number }[] }) => ({
+        id: row.id,
+        family_name: row.family_name,
+        created_at: row.created_at,
+        memberCount: row.members?.[0]?.count ?? 0,
+      }));
+
+      const familyNameById = new Map<string, string>(
+        (familiesRows.data || []).map((r: { id: string; family_name: string }) => [r.id, r.family_name || ''])
+      );
+
+      const rawMembers: MemberFamilyRow[] = (membersForFamilyRows.data || []).map((m: Record<string, unknown>) => {
+        const familyId = (m.family_id as string | null) ?? null;
+        const nameFromDb = familyId ? familyNameById.get(familyId) : undefined;
+        return {
+          id: m.id as string,
+          first_name: (m.first_name as string) || '',
+          middle_name: (m.middle_name as string | null) ?? null,
+          last_name: (m.last_name as string) || '',
+          status: String(m.status ?? ''),
+          member_number: String(m.member_number ?? ''),
+          family_id: familyId,
+          families: familyId
+            ? { id: familyId, family_name: (nameFromDb && nameFromDb.trim()) || 'Unknown family' }
+            : null,
+        };
+      });
+      const familySortName = (m: MemberFamilyRow) =>
+        (m.families?.family_name || '').trim() || (m.family_id ? 'Unknown family' : 'No family assigned');
+      const membersWithFamily = [...rawMembers].sort((a, b) => {
+        const fa = familySortName(a);
+        const fb = familySortName(b);
+        if (fa !== fb) return fa.localeCompare(fb, undefined, { sensitivity: 'base' });
+        const ln = a.last_name.localeCompare(b.last_name, undefined, { sensitivity: 'base' });
+        if (ln !== 0) return ln;
+        return a.first_name.localeCompare(b.first_name, undefined, { sensitivity: 'base' });
+      });
+
       return {
         kpi,
         membersList,
         attendanceList,
         visitorsList,
-        ministriesList,
-        ministriesWithMembers,
+        familiesList,
+        membersWithFamily,
         offeringsList,
         sabbathOfferings,
         sabbathVisitors,
@@ -120,10 +261,55 @@ const Reports: React.FC = () => {
   const membersList = data?.membersList ?? [];
   const attendanceList = data?.attendanceList ?? [];
   const visitorsList = data?.visitorsList ?? [];
-  const ministriesList = data?.ministriesList ?? [];
+  const familiesList = data?.familiesList ?? [];
+  const membersWithFamily = data?.membersWithFamily ?? [];
   const sabbathOfferings = data?.sabbathOfferings ?? [];
   const sabbathVisitors = data?.sabbathVisitors ?? [];
   const error = isError && queryError ? (queryError as Error).message : null;
+
+  const groupedByFamily = useMemo((): FamilyGroup[] => {
+    const byKey = new Map<string, FamilyGroup>();
+    for (const m of membersWithFamily) {
+      const key = m.family_id ?? '__none__';
+      const familyName =
+        m.families?.family_name?.trim() || (m.family_id ? 'Unknown family' : 'No family assigned');
+      if (!byKey.has(key)) {
+        byKey.set(key, { key, familyId: m.family_id, familyName, members: [] });
+      }
+      byKey.get(key)!.members.push(m);
+    }
+    for (const g of byKey.values()) {
+      g.members.sort((a, b) => {
+        const ln = a.last_name.localeCompare(b.last_name, undefined, { sensitivity: 'base' });
+        if (ln !== 0) return ln;
+        return a.first_name.localeCompare(b.first_name, undefined, { sensitivity: 'base' });
+      });
+    }
+    return [...byKey.values()].sort((a, b) =>
+      a.familyName.localeCompare(b.familyName, undefined, { sensitivity: 'base' })
+    );
+  }, [membersWithFamily]);
+
+  const toggleFamilyExpand = (familyId: string) => {
+    setExpandedFamilyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(familyId)) next.delete(familyId);
+      else next.add(familyId);
+      return next;
+    });
+  };
+
+  const downloadMembersByFamilyCsv = () => {
+    const csv = buildMembersByFamilyCsv(membersWithFamily);
+    const stamp = new Date().toISOString().split('T')[0];
+    downloadBlob(`members-by-family_${stamp}.csv`, new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' }));
+  };
+
+  const downloadGroupedRosterHtml = () => {
+    const html = buildGroupedRosterHtml('Members by family', groupedByFamily);
+    const stamp = new Date().toISOString().split('T')[0];
+    downloadBlob(`members-by-family-roster_${stamp}.html`, new Blob([html], { type: 'text/html;charset=utf-8;' }));
+  };
 
   useEffect(() => {
     const inv = () => {
@@ -136,7 +322,7 @@ const Reports: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tithes' }, inv)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'offerings' }, inv)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, inv)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ministries' }, inv)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'families' }, inv)
       .subscribe();
 
     return () => {
@@ -456,7 +642,7 @@ const Reports: React.FC = () => {
 
         <div className="px-5 pt-4">
           <div className="flex gap-2 text-sm">
-            {(['summary','members','attendance','offertory','visitors','ministries'] as const).map((t) => (
+            {(['summary','members','attendance','offertory','visitors','families'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} className={`px-3 py-2 rounded-t-md border-b-0 border ${tab===t? 'bg-white text-primary border-gray-300' : 'bg-gray-100 text-gray-600 border-transparent'}`}>{t[0].toUpperCase()+t.slice(1)}</button>
             ))}
           </div>
@@ -683,28 +869,178 @@ const Reports: React.FC = () => {
             </div>
           )}
 
-          {tab === 'ministries' && (
-            <div className="border rounded-lg overflow-hidden">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left p-2 border-b">Ministry</th>
-                    <th className="text-left p-2 border-b">Description</th>
-                    <th className="text-left p-2 border-b">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ministriesList.length === 0 ? (
-                    <tr><td className="p-2 text-gray-600" colSpan={3}>No ministries found (Debug: {ministriesList.length} items)</td></tr>
-                  ) : ministriesList.map((m) => (
-                    <tr key={m.id} className="odd:bg-white even:bg-gray-50">
-                      <td className="p-2 border-b font-medium">{m.name}</td>
-                      <td className="p-2 border-b text-gray-600">{m.description || 'No description'}</td>
-                      <td className="p-2 border-b text-gray-600">{m.created_at ? new Date(m.created_at).toLocaleDateString() : 'N/A'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {tab === 'families' && (
+            <div className="space-y-8">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-sm text-gray-600">
+                  Expand a family to see its members. Use the flat list for all members sorted by family, or the grouped
+                  preview for an at-a-glance directory. CSV and HTML support download and printing from your browser.
+                </p>
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={downloadMembersByFamilyCsv}
+                    disabled={membersWithFamily.length === 0}
+                    className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    CSV (by family)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadGroupedRosterHtml}
+                    disabled={groupedByFamily.length === 0}
+                    className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <FileText className="w-4 h-4" />
+                    HTML roster
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2">Families</h3>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="w-10 p-2 border-b" aria-label="Expand" />
+                        <th className="text-left p-2 border-b">Family name</th>
+                        <th className="text-left p-2 border-b">Members</th>
+                        <th className="text-left p-2 border-b">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {familiesList.length === 0 ? (
+                        <tr>
+                          <td className="p-2 text-gray-600" colSpan={4}>
+                            No families found.
+                          </td>
+                        </tr>
+                      ) : (
+                        familiesList.map((f) => {
+                          const open = expandedFamilyIds.has(f.id);
+                          const inFamily = membersWithFamily.filter((m) => m.family_id === f.id);
+                          return (
+                            <React.Fragment key={f.id}>
+                              <tr className="odd:bg-white even:bg-gray-50">
+                                <td className="p-2 border-b align-top">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFamilyExpand(f.id)}
+                                    className="p-1 rounded text-gray-600 hover:bg-gray-100"
+                                    aria-expanded={open}
+                                    aria-label={open ? 'Hide members' : 'Show members'}
+                                  >
+                                    {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                  </button>
+                                </td>
+                                <td className="p-2 border-b font-medium">{f.family_name || '—'}</td>
+                                <td className="p-2 border-b text-gray-700 tabular-nums">{f.memberCount}</td>
+                                <td className="p-2 border-b text-gray-600">
+                                  {f.created_at ? new Date(f.created_at).toLocaleDateString() : '—'}
+                                </td>
+                              </tr>
+                              {open && (
+                                <tr className="bg-slate-50">
+                                  <td colSpan={4} className="p-3 border-b">
+                                    {inFamily.length === 0 ? (
+                                      <p className="text-sm text-gray-500">No members linked to this family.</p>
+                                    ) : (
+                                      <table className="min-w-full text-sm border border-gray-200 rounded bg-white">
+                                        <thead className="bg-gray-100">
+                                          <tr>
+                                            <th className="text-left p-2 border-b">Name</th>
+                                            <th className="text-left p-2 border-b">Member #</th>
+                                            <th className="text-left p-2 border-b">Status</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {inFamily.map((m) => (
+                                            <tr key={m.id}>
+                                              <td className="p-2 border-b">{memberDisplayName(m)}</td>
+                                              <td className="p-2 border-b text-gray-600">{m.member_number}</td>
+                                              <td className="p-2 border-b text-gray-600">{m.status}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2">All members sorted by family</h3>
+                <div className="border rounded-lg overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left p-2 border-b">Family</th>
+                        <th className="text-left p-2 border-b">Name</th>
+                        <th className="text-left p-2 border-b">Member #</th>
+                        <th className="text-left p-2 border-b">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {membersWithFamily.length === 0 ? (
+                        <tr>
+                          <td className="p-2 text-gray-600" colSpan={4}>
+                            No members loaded.
+                          </td>
+                        </tr>
+                      ) : (
+                        membersWithFamily.map((m) => (
+                          <tr key={m.id} className="odd:bg-white even:bg-gray-50">
+                            <td className="p-2 border-b text-gray-800">
+                              {m.families?.family_name?.trim() ||
+                                (m.family_id ? 'Unknown family' : 'No family assigned')}
+                            </td>
+                            <td className="p-2 border-b font-medium">{memberDisplayName(m)}</td>
+                            <td className="p-2 border-b text-gray-600">{m.member_number}</td>
+                            <td className="p-2 border-b text-gray-600">{m.status}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2">Grouped preview</h3>
+                <div className="border rounded-lg p-4 bg-slate-50/80 space-y-6 max-h-[480px] overflow-y-auto">
+                  {groupedByFamily.length === 0 ? (
+                    <p className="text-sm text-gray-500">No members to display.</p>
+                  ) : (
+                    groupedByFamily.map((g) => (
+                      <div key={g.key} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                        <h4 className="text-sm font-semibold text-primary border-b border-teal-100 pb-2 mb-2">
+                          {g.familyName}{' '}
+                          <span className="font-normal text-gray-500">({g.members.length})</span>
+                        </h4>
+                        <ul className="text-sm text-gray-800 space-y-1">
+                          {g.members.map((m) => (
+                            <li key={m.id} className="flex flex-wrap gap-x-2 gap-y-0.5">
+                              <span>{memberDisplayName(m)}</span>
+                              <span className="text-gray-500">· {m.member_number}</span>
+                              <span className="text-gray-400">· {m.status}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>

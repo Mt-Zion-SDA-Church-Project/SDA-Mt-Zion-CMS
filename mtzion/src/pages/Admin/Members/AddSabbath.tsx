@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
+import { formatZodError, sabbathResourceUploadSchema, MAX_SABBATH_RESOURCE_BYTES } from '../../../lib/validation';
 
 const AddSabbath: React.FC = () => {
   const queryClient = useQueryClient();
@@ -108,10 +109,19 @@ const AddSabbath: React.FC = () => {
     setUploadErr(null);
     
     try {
+      const fields = sabbathResourceUploadSchema.safeParse(resourceForm);
+      if (!fields.success) {
+        setUploadErr(formatZodError(fields.error));
+        return;
+      }
       if (!resourceFile) throw new Error('Please choose a file to upload');
+      if (resourceFile.size > MAX_SABBATH_RESOURCE_BYTES) {
+        setUploadErr('File must be 25MB or smaller.');
+        return;
+      }
       await uploadMutation.mutateAsync({
-        title: resourceForm.title,
-        category: resourceForm.category,
+        title: fields.data.title,
+        category: fields.data.category,
         file: resourceFile,
       });
       setUploadMsg('Resource uploaded successfully');

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
+import { SabbathResourcePreviewModal } from '../../../components/SabbathResourcePreviewModal';
 
 type KidRow = {
   id: string;
@@ -25,6 +26,7 @@ const SabbathDetails: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
+  const [previewResource, setPreviewResource] = useState<ResourceRow | null>(null);
 
   const { data: rows = [], isPending: classesLoading } = useQuery({
     queryKey: queryKeys.sabbath.classes(),
@@ -169,8 +171,21 @@ const SabbathDetails: React.FC = () => {
                     <div className="text-sm text-gray-800">{r.title}</div>
                     <div className="text-xs text-gray-500">{new Date(r.created_at).toLocaleString()}</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {r.file_url && <a href={r.file_url} target="_blank" rel="noreferrer" className="px-2 py-1 text-xs bg-primary text-white rounded">Download</a>}
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {r.file_url && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewResource(r)}
+                          className="px-2 py-1 text-xs border border-primary text-primary rounded hover:bg-primary/5"
+                        >
+                          Preview
+                        </button>
+                        <a href={r.file_url} target="_blank" rel="noreferrer" className="px-2 py-1 text-xs bg-primary text-white rounded">
+                          Download
+                        </a>
+                      </>
+                    )}
                     <button onClick={async () => {
                       if (!window.confirm('Delete resource?')) return;
                       setActionError(null);
@@ -200,8 +215,21 @@ const SabbathDetails: React.FC = () => {
                     <div className="text-sm text-gray-800">{r.title}</div>
                     <div className="text-xs text-gray-500">{new Date(r.created_at).toLocaleString()}</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {r.file_url && <a href={r.file_url} target="_blank" rel="noreferrer" className="px-2 py-1 text-xs bg-primary text-white rounded">Download</a>}
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {r.file_url && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewResource(r)}
+                          className="px-2 py-1 text-xs border border-primary text-primary rounded hover:bg-primary/5"
+                        >
+                          Preview
+                        </button>
+                        <a href={r.file_url} target="_blank" rel="noreferrer" className="px-2 py-1 text-xs bg-primary text-white rounded">
+                          Download
+                        </a>
+                      </>
+                    )}
                     <button onClick={async () => {
                       if (!window.confirm('Delete resource?')) return;
                       setActionError(null);
@@ -223,6 +251,13 @@ const SabbathDetails: React.FC = () => {
 
         {/* Past Papers section removed */}
       </div>
+
+      <SabbathResourcePreviewModal
+        open={!!previewResource}
+        onClose={() => setPreviewResource(null)}
+        title={previewResource?.title ?? ''}
+        fileUrl={previewResource?.file_url ?? null}
+      />
     </div>
   );
 };

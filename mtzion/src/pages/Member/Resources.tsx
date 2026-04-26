@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { queryKeys } from '../../lib/queryKeys';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
+import { SabbathResourcePreviewModal } from '../../components/SabbathResourcePreviewModal';
 
 type ResourceRow = {
   id: string;
@@ -26,6 +27,7 @@ const MemberResources: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'adult' | 'children'>('adult');
   const [query, setQuery] = useState('');
+  const [previewResource, setPreviewResource] = useState<ResourceRow | null>(null);
 
   const resourcesQuery = useQuery({
     queryKey: queryKeys.memberPortal.resources(),
@@ -96,9 +98,18 @@ const MemberResources: React.FC = () => {
                   <div className="text-xs text-gray-500">{new Date(r.created_at).toLocaleString()}</div>
                 </div>
                 {r.file_url ? (
-                  <a href={r.file_url} target="_blank" rel="noreferrer" className="px-3 py-1.5 text-xs bg-primary text-white rounded">
-                    Download
-                  </a>
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewResource(r)}
+                      className="px-3 py-1.5 text-xs border border-primary text-primary rounded hover:bg-primary/5"
+                    >
+                      Preview
+                    </button>
+                    <a href={r.file_url} target="_blank" rel="noreferrer" className="px-3 py-1.5 text-xs bg-primary text-white rounded">
+                      Download
+                    </a>
+                  </div>
                 ) : (
                   <span className="text-xs text-gray-500">No file URL</span>
                 )}
@@ -110,6 +121,13 @@ const MemberResources: React.FC = () => {
           </ul>
         </div>
       </div>
+
+      <SabbathResourcePreviewModal
+        open={!!previewResource}
+        onClose={() => setPreviewResource(null)}
+        title={previewResource?.title ?? ''}
+        fileUrl={previewResource?.file_url ?? null}
+      />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
+import { formatZodError, eventSaveFormSchema } from '../../../lib/validation';
 import QRCodeGenerator from '../../../components/QRCodeGenerator';
 
 const AddEvent: React.FC = () => {
@@ -64,28 +65,31 @@ const AddEvent: React.FC = () => {
   const handleSave = async () => {
     setError(null);
     setSuccess(null);
-    if (!title || !eventDate) {
-      setError('Title and Event Date are required.');
+    const parsed = eventSaveFormSchema.safeParse({
+      title,
+      description,
+      eventDate,
+      endDate,
+      location,
+      eventType,
+      registrationRequired,
+      isNewEvent: !editingId,
+    });
+    if (!parsed.success) {
+      setError(formatZodError(parsed.error));
       return;
     }
-    
-    // Validate that event date is in the future
-    const eventDateTime = new Date(eventDate);
-    const now = new Date();
-    if (eventDateTime <= now) {
-      setError('Event date must be in the future.');
-      return;
-    }
-    
+
+    const eventDateTime = new Date(parsed.data.eventDate);
     setSaving(true);
     const payload: Record<string, unknown> = {
-      title,
-      description: description || null,
+      title: parsed.data.title,
+      description: parsed.data.description || null,
       event_date: eventDateTime.toISOString(),
-      end_date: endDate ? new Date(endDate).toISOString() : null,
-      location: location || null,
-      event_type: eventType || 'general',
-      registration_required: registrationRequired,
+      end_date: parsed.data.endDate.trim() ? new Date(parsed.data.endDate).toISOString() : null,
+      location: parsed.data.location || null,
+      event_type: parsed.data.eventType || 'general',
+      registration_required: parsed.data.registrationRequired,
     };
     
     try {

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { queryKeys } from '../../lib/queryKeys';
+import { formatZodError, offertoryNotesSchema } from '../../lib/validation';
 import mtnLogo from '../../assets/mtn.png';
 import airtelLogo from '../../assets/airtel.png';
 import cardLogo from '../../assets/visa-mastercard.png';
@@ -143,6 +144,11 @@ const GiveOffertory: React.FC = () => {
   };
 
   const handlePay = () => {
+    const notesCheck = offertoryNotesSchema.safeParse(notes);
+    if (!notesCheck.success) {
+      alert(formatZodError(notesCheck.error));
+      return;
+    }
     if (total <= 0) {
       alert('Please enter at least one amount before paying.');
       return;
@@ -150,7 +156,7 @@ const GiveOffertory: React.FC = () => {
     const categories = rows
       .filter((r) => (Number(r.amount) || 0) > 0)
       .map((r) => ({ key: r.key || 'custom', label: r.label, amount: Math.floor(Number(r.amount)) }));
-    payMutation.mutate({ total, categories, payMethod, notes });
+    payMutation.mutate({ total, categories, payMethod, notes: notesCheck.data });
   };
 
   return (

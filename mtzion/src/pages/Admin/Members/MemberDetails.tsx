@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
+import { formatZodError, createPortalUserFromMemberSchema } from '../../../lib/validation';
 import { getAuthEmailRedirectUrl } from '../../../lib/authRedirect';
 import sdaLogo from '../../../assets/sda-logo.png';
 
@@ -262,10 +263,18 @@ const MemberDetails: React.FC = () => {
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMember) return;
-    createUserMutation.mutate({
-      member: selectedMember,
+    const parsed = createPortalUserFromMemberSchema.safeParse({
       password: createUserForm.password,
       role: createUserForm.role,
+    });
+    if (!parsed.success) {
+      setActionError(formatZodError(parsed.error));
+      return;
+    }
+    createUserMutation.mutate({
+      member: selectedMember,
+      password: parsed.data.password,
+      role: parsed.data.role,
     });
   };
 

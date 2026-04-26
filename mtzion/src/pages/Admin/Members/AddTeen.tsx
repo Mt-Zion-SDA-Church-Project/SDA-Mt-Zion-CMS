@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
+import { formatZodError, addTeenFormSchema } from '../../../lib/validation';
 
 type ChildRow = {
   id: string;
@@ -158,21 +159,22 @@ const AddTeen: React.FC = () => {
     setSuccess(null);
 
     try {
-      // Validate required fields
-      if (!form.firstName || !form.lastName || !form.gender || !form.birthday) {
-        throw new Error('Please fill in all required fields (First Name, Last Name, Gender, Birthday)');
+      const parsed = addTeenFormSchema.safeParse(form);
+      if (!parsed.success) {
+        throw new Error(formatZodError(parsed.error));
       }
+      const f = parsed.data;
 
       const teenPayload: any = {
-        first_name: form.firstName,
-        last_name: form.lastName,
-        middle_name: form.surname || null,
-        gender: form.gender,
-        date_of_birth: form.birthday,
-        address: form.residence || null,
-        place_of_birth: form.placeOfBirth || null,
-        parent_name: form.parentsName || null,
-        mobile: form.mobile || null,
+        first_name: f.firstName,
+        last_name: f.lastName,
+        middle_name: f.surname || null,
+        gender: f.gender,
+        date_of_birth: f.birthday,
+        address: f.residence || null,
+        place_of_birth: f.placeOfBirth || null,
+        parent_name: f.parentsName || null,
+        mobile: f.mobile || null,
       };
 
       await registerMutation.mutateAsync(teenPayload);

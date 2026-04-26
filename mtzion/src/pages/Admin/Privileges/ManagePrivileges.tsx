@@ -19,7 +19,8 @@ const ManagePrivileges: React.FC = () => {
     { name: 'dashboard', label: 'Dashboard', userType: 'admin' },
     { name: 'members', label: 'Members', userType: 'admin' },
     { name: 'visitors', label: 'Visitors', userType: 'admin' },
-    { name: 'offertory', label: 'Offertory', userType: 'admin' },
+    { name: 'offertory', label: 'Offertory (record)', userType: 'admin' },
+    { name: 'financial_summaries', label: 'Financial summaries', userType: 'admin' },
     { name: 'events', label: 'Events', userType: 'admin' },
     { name: 'attendance', label: 'Attendance', userType: 'admin' },
     { name: 'reports', label: 'Reports', userType: 'admin' },
@@ -44,11 +45,11 @@ const ManagePrivileges: React.FC = () => {
     queryFn: async () => {
       let usersData: (SystemUser | Member)[] = [];
       if (selectedUserType === 'admin') {
+        // All admins (active + inactive); inactive users still cannot sign in.
         const { data: adminUsers, error: adminError } = await supabase
           .from('system_users')
           .select('*')
-          .eq('role', 'admin')
-          .eq('is_active', true);
+          .eq('role', 'admin');
         
         if (adminError) throw adminError;
         usersData = adminUsers || [];
@@ -146,6 +147,7 @@ const ManagePrivileges: React.FC = () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.privileges.manage(selectedUserType) });
       void queryClient.invalidateQueries({ queryKey: ['sidebar', 'privileges'] });
       void queryClient.invalidateQueries({ queryKey: ['memberMobileNav', 'privileges'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'tabAllowed'] });
       alert('Privileges saved successfully!');
     },
   });
@@ -437,6 +439,11 @@ const ManagePrivileges: React.FC = () => {
                             <p className="text-sm text-gray-500">
                               {'email' in user ? user.email : 'email@example.com'}
                             </p>
+                            {'is_active' in user && user.is_active === false && (
+                              <p className="text-xs text-amber-700 mt-1">
+                                Inactive — cannot sign in until activated in System Users.
+                              </p>
+                            )}
                             {blockedCount > 0 && (
                               <p className="text-xs text-red-600 mt-1">
                                 {blockedCount} of {totalCount} tabs blocked

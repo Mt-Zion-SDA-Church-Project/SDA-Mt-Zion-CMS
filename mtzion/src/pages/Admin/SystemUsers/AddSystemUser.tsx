@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
 import { getAuthEmailRedirectUrl } from '../../../lib/authRedirect';
-import { UserPlus, Trash2, Edit3, Shield, Mail } from 'lucide-react';
+import { UserPlus, Trash2, Edit3, Shield, Mail, Eye, EyeOff } from 'lucide-react';
 import { sendCredentialsEmail } from '../../../lib/emailService';
+import { formatZodError, addSystemUserFormSchema } from '../../../lib/validation';
 
 type SystemUserRow = {
   id: string;
@@ -29,6 +30,7 @@ const AddSystemUser: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const { data: users = [], isPending: loading } = useQuery({
     queryKey: queryKeys.systemUsers.forAddUser(),
@@ -110,9 +112,15 @@ const AddSystemUser: React.FC = () => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    const parsed = addSystemUserFormSchema.safeParse(form);
+    if (!parsed.success) {
+      setError(formatZodError(parsed.error));
+      return;
+    }
     try {
       await createMutation.mutateAsync();
       setForm({ username: '', fullName: '', email: '', role: 'admin', password: '' });
+      setShowPassword(false);
       setSuccess('System user created successfully');
     } catch (err: any) {
       setError(err.message || 'Failed to create system user');
@@ -212,16 +220,25 @@ const AddSystemUser: React.FC = () => {
               <option value="super_admin">Super Admin</option>
             </select>
           </div>
-          <div>
-            <input 
-              type="password" 
-              name="password" 
-              value={form.password} 
-              onChange={handleChange} 
-              placeholder="Password" 
-              className="w-full border rounded px-3 py-2" 
-              required 
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              value={form.password}
+              onChange={handleChange}
+              placeholder="Password"
+              className="w-full border rounded px-3 py-2 pr-10"
+              required
+              autoComplete="new-password"
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-gray-500 hover:text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
           </div>
           {error && <div className="text-sm text-red-600">{error}</div>}
           {success && <div className="text-sm text-green-600">{success}</div>}

@@ -1,0 +1,9 @@
+{
+  "name": "sda-mt-zion-cms",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Vercel uses vercel.json at this repo root when Root Directory is not set to mtzion. See mtzion/README or Vercel project settings.",
+  "scripts": {
+    "build": "cd mtzion && npm run build"
+  }
+}

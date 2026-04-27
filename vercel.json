@@ -1,9 +1,8 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
+  "buildCommand": "cd mtzion && npm run build",
+  "installCommand": "cd mtzion && npm install",
+  "outputDirectory": "mtzion/dist",
   "framework": "vite",
-  "installCommand": "npm install",
-  "devCommand": "npm run dev",
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
@@ -16,8 +15,5 @@
       ]
     }
   ],
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
-

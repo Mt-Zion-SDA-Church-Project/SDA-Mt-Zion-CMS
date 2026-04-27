@@ -16,10 +16,10 @@ const Layout: React.FC = () => {
         <Sidebar isCollapsed={sidebarCollapsed} />
       </div>
       
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <Header toggleSidebar={toggleSidebar} />
-        
-        <main className="flex-1 overflow-auto p-3 sm:p-6">
+
+        <main className="min-h-0 flex-1 overflow-auto p-3 sm:p-6">
           <Outlet />
         </main>
       </div>

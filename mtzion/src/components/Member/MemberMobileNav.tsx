@@ -172,7 +172,7 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
   };
 
   return (
-    <div className="lg:hidden sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-sm">
+    <div className="sticky top-0 z-40 border-b border-slate-200/90 bg-white shadow-sm lg:hidden">
       <div className="flex items-center justify-between gap-2 px-3 py-3 sm:px-4">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200/60">

@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { queryKeys } from '../../lib/queryKeys';
+import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, Heart, Gift, Activity, ChevronDown, MapPin, Clock } from 'lucide-react';
 import MemberMobileNav from '../../components/Member/MemberMobileNav';
 import logo from '../../assets/sda-logo.png';
@@ -39,14 +40,11 @@ const emptyStats: MemberStats = {
   recentActivity: [],
 };
 
-async function fetchMemberDashboardStats(): Promise<MemberStats> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return emptyStats;
-
+async function fetchMemberDashboardStats(authUserId: string): Promise<MemberStats> {
   const { data: memberData } = await supabase
     .from('members')
     .select('id, first_name, last_name')
-    .eq('user_id', user.id)
+    .eq('user_id', authUserId)
     .single();
 
   if (!memberData) return emptyStats;
@@ -72,9 +70,9 @@ async function fetchMemberDashboardStats(): Promise<MemberStats> {
       .limit(5),
     supabase.from('members').select('id, first_name, last_name, date_of_birth').not('date_of_birth', 'is', null),
     supabase
-      .from('activity_log')
+      .from('activity_logs')
       .select('action, created_at')
-      .eq('user_id', user.id)
+      .eq('user_id', authUserId)
       .order('created_at', { ascending: false })
       .limit(5),
   ]);
@@ -153,28 +151,30 @@ async function fetchMemberDashboardStats(): Promise<MemberStats> {
 }
 
 const MemberDashboard: React.FC = () => {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [showEventsDropdown, setShowEventsDropdown] = React.useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const dashboardQuery = useQuery({
-    queryKey: queryKeys.memberPortal.dashboardMe(),
+    queryKey: [...queryKeys.memberPortal.dashboardMe(), user?.id ?? ''] as const,
     queryFn: async () => {
       try {
-        return await fetchMemberDashboardStats();
+        return await fetchMemberDashboardStats(user!.id);
       } catch (error) {
         console.error('Error loading member dashboard data:', error);
         return emptyStats;
       }
     },
+    enabled: !!user?.id,
   });
 
   const stats = dashboardQuery.data ?? emptyStats;
-  const loading = dashboardQuery.isLoading;
+  const loading = !user?.id || dashboardQuery.isLoading;
 
   useEffect(() => {
     const invalidate = () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.dashboardMe() });
+      void queryClient.invalidateQueries({ queryKey: ['member', 'dashboard', 'me'], exact: false });
     };
 
     const membersChannel = supabase
@@ -262,7 +262,7 @@ const MemberDashboard: React.FC = () => {
       iconWrap: 'bg-amber-500/12 text-amber-600',
       valueClass: 'text-slate-900',
     },
-  ] as const;
+  ];
 
   if (loading) {
     return (
@@ -317,7 +317,7 @@ const MemberDashboard: React.FC = () => {
         {memberStats.map((stat, index) => (
           <div
             key={index}
-            className="relative overflow-hidden rounded-2xl border border-slate-100/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.04] transition-shadow hover:shadow-md lg:p-5"
+            className="relative rounded-2xl border border-slate-100/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.04] transition-shadow hover:shadow-md lg:p-5"
           >
             <div
               className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl lg:h-11 lg:w-11 ${stat.iconWrap}`}

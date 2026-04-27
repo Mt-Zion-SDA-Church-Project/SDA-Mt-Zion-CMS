@@ -48,6 +48,7 @@ const AddEvent: React.FC = () => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.events.list() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.events.upcoming() });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'logs', 'activity'], exact: false });
     },
   });
 
@@ -59,6 +60,7 @@ const AddEvent: React.FC = () => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.events.list() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.events.upcoming() });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'logs', 'activity'], exact: false });
     },
   });
 

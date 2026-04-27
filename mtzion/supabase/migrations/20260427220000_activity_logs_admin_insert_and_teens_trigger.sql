@@ -1,11 +1,13 @@
 /*
-  Child rows live in public.teens; audit rows come from trg_teens_activity -> log_change_generic().
+  Audit rows for children and events (and every other table wired to log_change_generic) INSERT into
+  activity_logs from the same trigger function.
 
-  If activity_logs has RLS enabled with SELECT-only policies, INSERT from the trigger can still be
-  evaluated for the session role in some setups. Allow admins to INSERT audit rows (same rule as
-  SELECT), and ensure the teens trigger exists.
+  If activity_logs has RLS with SELECT-only policies, INSERT from the trigger can still be blocked
+  for the session role in some setups. The GRANT + admin INSERT policy + function settings below fix
+  that for all entity types, not only teens.
 
-  Also set search_path / row_security on the logger so inserts are reliable when owned by postgres.
+  Re-attach triggers on public.teens and public.events so those two flows are definitely covered if
+  an older bulk migration was skipped or partially applied.
 */
 
 ALTER FUNCTION public.log_change_generic() SET search_path = public;
@@ -37,13 +39,20 @@ CREATE POLICY "Admins can insert activity logs" ON public.activity_logs
   );
 
 DO $$
+DECLARE
+  tbl text;
 BEGIN
-  IF to_regclass('public.teens') IS NOT NULL THEN
-    EXECUTE 'DROP TRIGGER IF EXISTS trg_teens_activity ON public.teens';
-    EXECUTE $t$
-      CREATE TRIGGER trg_teens_activity
-      AFTER INSERT OR UPDATE OR DELETE ON public.teens
-      FOR EACH ROW EXECUTE FUNCTION public.log_change_generic()
-    $t$;
-  END IF;
+  FOREACH tbl IN ARRAY ARRAY['teens', 'events']
+  LOOP
+    IF to_regclass(format('public.%I', tbl)) IS NOT NULL THEN
+      EXECUTE format('DROP TRIGGER IF EXISTS trg_%I_activity ON public.%I', tbl, tbl);
+      EXECUTE format(
+        'CREATE TRIGGER trg_%I_activity
+         AFTER INSERT OR UPDATE OR DELETE ON public.%I
+         FOR EACH ROW EXECUTE FUNCTION public.log_change_generic()',
+        tbl,
+        tbl
+      );
+    END IF;
+  END LOOP;
 END $$;

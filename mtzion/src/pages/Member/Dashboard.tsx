@@ -238,32 +238,36 @@ const MemberDashboard: React.FC = () => {
       name: 'My Offerings',
       value: formatCurrency(stats.myOfferings),
       icon: Gift,
-      color: 'bg-green-500',
+      iconWrap: 'bg-emerald-500/12 text-emerald-600',
+      valueClass: 'text-emerald-800',
     },
     {
       name: 'Events Attended',
       value: `${stats.eventsAttended}`,
       icon: Calendar,
-      color: 'bg-blue-500',
+      iconWrap: 'bg-sky-500/12 text-sky-600',
+      valueClass: 'text-slate-900',
     },
     {
       name: 'Birthdays',
       value: `${stats.upcomingBirthdays.length}`,
       icon: Heart,
-      color: 'bg-purple-500',
+      iconWrap: 'bg-violet-500/12 text-violet-600',
+      valueClass: 'text-slate-900',
     },
     {
       name: 'Activities',
       value: `${stats.recentActivity.length}`,
       icon: Activity,
-      color: 'bg-orange-500',
+      iconWrap: 'bg-amber-500/12 text-amber-600',
+      valueClass: 'text-slate-900',
     },
-  ];
+  ] as const;
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <MemberMobileNav title="My Dashboard" />
+      <div className="space-y-5 lg:space-y-6">
+        <MemberMobileNav title="My Dashboard" showSubtitle={false} />
 
         <div className="hidden lg:block mb-8">
           <div className="flex items-center gap-4 mb-4">
@@ -275,16 +279,15 @@ const MemberDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 lg:gap-6">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-white rounded-lg shadow-md p-4 lg:p-6 animate-pulse">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="h-8 bg-gray-200 rounded w-1/2"></div>
-                </div>
-                <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
-              </div>
+            <div
+              key={i}
+              className="animate-pulse rounded-2xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.03] lg:p-5"
+            >
+              <div className="mb-3 h-10 w-10 rounded-xl bg-slate-100" />
+              <div className="mb-2 h-7 w-20 rounded-lg bg-slate-100" />
+              <div className="h-3 w-24 rounded bg-slate-100" />
             </div>
           ))}
         </div>
@@ -293,8 +296,8 @@ const MemberDashboard: React.FC = () => {
   }
 
   return (
-    <div className="lg:space-y-6">
-      <MemberMobileNav title="My Dashboard" />
+    <div className="space-y-5 lg:space-y-6">
+      <MemberMobileNav title="My Dashboard" showSubtitle={false} />
 
       <div className="hidden lg:block mb-8">
         <div className="flex items-center gap-4 mb-4">
@@ -306,52 +309,63 @@ const MemberDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-6">
+      <p className="text-sm leading-relaxed text-slate-600 lg:hidden">
+        Here&apos;s a snapshot of your giving, participation, and what&apos;s coming up at church.
+      </p>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:mb-6 lg:grid-cols-4 lg:gap-6">
         {memberStats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-lg shadow-md p-4 lg:p-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className={`w-10 h-10 rounded-lg ${stat.color} flex items-center justify-center`}>
-                <stat.icon className="w-5 h-5 text-white" />
-              </div>
-              <div className="text-right">
-                <p className={`text-lg lg:text-xl font-bold ${stat.color.replace('bg-', 'text-')}`}>{stat.value}</p>
-                <p className="text-xs lg:text-sm text-gray-600">{stat.name}</p>
-              </div>
+          <div
+            key={index}
+            className="relative overflow-hidden rounded-2xl border border-slate-100/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.04] transition-shadow hover:shadow-md lg:p-5"
+          >
+            <div
+              className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl lg:h-11 lg:w-11 ${stat.iconWrap}`}
+            >
+              <stat.icon className="h-5 w-5" strokeWidth={2} />
             </div>
+            <p className={`text-lg font-bold tabular-nums tracking-tight lg:text-2xl ${stat.valueClass}`}>{stat.value}</p>
+            <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 lg:text-xs lg:normal-case lg:tracking-normal lg:text-slate-600">
+              {stat.name}
+            </p>
           </div>
         ))}
       </div>
 
-      <div className="lg:grid lg:grid-cols-3 lg:gap-6">
-        <div className="bg-white rounded-lg shadow-md p-4 lg:p-6 mb-4 lg:mb-0">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Upcoming Events</h3>
+      <div className="lg:grid lg:grid-cols-3 lg:gap-6 lg:space-y-0 space-y-4">
+        <div className="rounded-2xl border border-slate-100/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.03] lg:p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <h3 className="text-base font-semibold text-slate-900">Upcoming Events</h3>
             <div className="relative" ref={dropdownRef}>
               <button
+                type="button"
                 onClick={() => setShowEventsDropdown(!showEventsDropdown)}
-                className="flex items-center gap-1 text-primary hover:text-blue-700"
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-sky-700 transition hover:bg-sky-50"
               >
                 <span>All Events</span>
-                <ChevronDown className={`w-4 h-4 transition-transform ${showEventsDropdown ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-4 w-4 transition-transform ${showEventsDropdown ? 'rotate-180' : ''}`} />
               </button>
 
               {showEventsDropdown && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-10">
+                <div className="absolute right-0 z-20 mt-2 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
                   <button
+                    type="button"
                     onClick={() => setShowEventsDropdown(false)}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
                   >
                     All Events
                   </button>
                   <button
+                    type="button"
                     onClick={() => setShowEventsDropdown(false)}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
                   >
                     This Week
                   </button>
                   <button
+                    type="button"
                     onClick={() => setShowEventsDropdown(false)}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
                   >
                     This Month
                   </button>
@@ -360,97 +374,110 @@ const MemberDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {stats.upcomingEvents.length > 0 ? (
               stats.upcomingEvents.map((event, index) => (
-                <div key={index} className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-1">
-                    <Calendar className="w-4 h-4 text-blue-600" />
+                <div
+                  key={index}
+                  className="flex gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3 transition hover:border-slate-200 hover:bg-white"
+                >
+                  <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
+                    <Calendar className="h-4 w-4" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-800 truncate">{event.name}</p>
-                    <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        <span>{event.date}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold leading-snug text-slate-900">{event.name}</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar className="h-3 w-3 text-slate-400" />
+                        {event.date}
+                      </span>
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <MapPin className="h-3 w-3 flex-shrink-0 text-slate-400" />
                         <span className="truncate">{event.location}</span>
-                      </div>
+                      </span>
                     </div>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-center py-6 text-gray-500">
-                <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                <p className="text-sm">No upcoming events</p>
-                <p className="text-xs">Check back later for updates</p>
+              <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-slate-500">
+                <Calendar className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                <p className="text-sm font-medium text-slate-700">No upcoming events</p>
+                <p className="mt-1 text-xs text-slate-500">Check back later for updates</p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-4 lg:p-6 mb-4 lg:mb-0">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Recent Activity</h3>
-            <Activity className="w-5 h-5 text-primary" />
+        <div className="rounded-2xl border border-slate-100/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.03] lg:p-6">
+          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="text-base font-semibold text-slate-900">Recent Activity</h3>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700">
+              <Activity className="h-5 w-5" />
+            </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {stats.recentActivity.length > 0 ? (
               stats.recentActivity.map((activity, index) => (
-                <div key={index} className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg">
-                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-1">
-                    <Gift className="w-4 h-4 text-green-600" />
+                <div
+                  key={index}
+                  className="flex gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3 transition hover:border-slate-200 hover:bg-white"
+                >
+                  <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                    <Gift className="h-4 w-4" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-800">{activity.action}</p>
-                    <div className="flex items-center gap-1 mt-1 text-sm text-gray-500">
-                      <Clock className="w-3 h-3" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-900">{activity.action}</p>
+                    <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+                      <Clock className="h-3 w-3" />
                       <span>{activity.timestamp}</span>
                     </div>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-center py-6 text-gray-500">
-                <Activity className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                <p className="text-sm">No recent activity</p>
-                <p className="text-xs">Your activity will appear here</p>
+              <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-slate-500">
+                <Activity className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                <p className="text-sm font-medium text-slate-700">No recent activity</p>
+                <p className="mt-1 text-xs text-slate-500">Your activity will appear here</p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Birthdays This Week</h3>
-            <Heart className="w-5 h-5 text-primary" />
+        <div className="rounded-2xl border border-slate-100/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.03] lg:p-6">
+          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="text-base font-semibold text-slate-900">Birthdays This Week</h3>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/10 text-violet-700">
+              <Heart className="h-5 w-5" />
+            </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {stats.upcomingBirthdays.length > 0 ? (
               stats.upcomingBirthdays.map((birthday, index) => (
-                <div key={index} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white">
-                    <span className="text-sm font-medium">{birthday.name.charAt(0)}</span>
+                <div
+                  key={index}
+                  className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3 transition hover:border-slate-200 hover:bg-white"
+                >
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-sky-600 text-sm font-semibold text-white shadow-sm">
+                    {birthday.name.charAt(0)}
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-800">{birthday.name}</p>
-                    <div className="flex items-center gap-1 text-sm text-gray-500">
-                      <Heart className="w-3 h-3" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-slate-900">{birthday.name}</p>
+                    <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+                      <Heart className="h-3 w-3 text-violet-400" />
                       <span>{birthday.date}</span>
                     </div>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-center py-6 text-gray-500">
-                <Heart className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                <p className="text-sm">No birthdays this week</p>
-                <p className="text-xs">Check back for upcoming celebrations</p>
+              <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-slate-500">
+                <Heart className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                <p className="text-sm font-medium text-slate-700">No birthdays this week</p>
+                <p className="mt-1 text-xs text-slate-500">Check back for upcoming celebrations</p>
               </div>
             )}
           </div>

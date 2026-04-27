@@ -27,9 +27,11 @@ const items: MenuItem[] = [
 
 interface MemberMobileNavProps {
   title?: string;
+  /** When false, hides the small “Member Portal” line under the title for a cleaner dashboard bar. */
+  showSubtitle?: boolean;
 }
 
-const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Portal' }) => {
+const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Portal', showSubtitle = true }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
@@ -170,22 +172,27 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
   };
 
   return (
-    <div className="bg-white shadow-sm border-b lg:hidden">
-      <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3">
-          <img src={logo} alt="SDA Mt. Zion Logo" className="w-8 h-8 object-contain" />
-          <div>
-            <h1 className="text-lg font-bold text-gray-800">{title}</h1>
-            <p className="text-xs text-gray-600">Member Portal</p>
+    <div className="lg:hidden sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-sm">
+      <div className="flex items-center justify-between gap-2 px-3 py-3 sm:px-4">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200/60">
+            <img src={logo} alt="" className="h-7 w-7 object-contain" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-bold tracking-tight text-slate-900">{title}</h1>
+            {showSubtitle ? (
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Member Portal</p>
+            ) : null}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <div className="relative">
             <button
+              type="button"
               onClick={() => setNotificationsOpen(!notificationsOpen)}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200 relative"
+              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
             >
-              <Bell className="w-5 h-5 text-gray-700" />
+              <Bell className="h-5 w-5" />
               {notifications.filter((n) => !n.is_read).length > 0 && (
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
                   {notifications.filter((n) => !n.is_read).length}
@@ -194,38 +201,43 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
             </button>
 
             {notificationsOpen && (
-              <div className="absolute right-0 mt-2 w-80 bg-white border rounded-lg shadow-lg z-50 max-h-96 overflow-hidden">
-                <div className="px-4 py-3 border-b flex items-center justify-between">
-                  <span className="text-sm font-semibold text-gray-800">Notifications</span>
-                  <button onClick={() => setNotificationsOpen(false)} className="p-1 hover:bg-gray-100 rounded">
-                    <X className="w-4 h-4 text-gray-500" />
+              <div className="absolute right-0 mt-2 w-[min(100vw-1.5rem,20rem)] rounded-xl border border-slate-200 bg-white shadow-xl z-50 max-h-96 overflow-hidden">
+                <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5">
+                  <span className="text-sm font-semibold text-slate-800">Notifications</span>
+                  <button
+                    type="button"
+                    onClick={() => setNotificationsOpen(false)}
+                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                  >
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
                 <div className="max-h-64 overflow-auto">
                   {notifications.length === 0 ? (
-                    <div className="p-4 text-sm text-gray-600 text-center">No notifications</div>
+                    <div className="p-4 text-center text-sm text-slate-600">No notifications</div>
                   ) : (
                     notifications.map((n) => {
                       const Icon = getNotificationIcon(n.type);
                       return (
                         <button
+                          type="button"
                           key={n.id}
                           onClick={() => {
                             markAsRead(n.id);
                             onNavigate(getNotificationLink(n));
                             setNotificationsOpen(false);
                           }}
-                          className={`w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-gray-50 ${!n.is_read ? 'bg-blue-50' : ''}`}
+                          className={`flex w-full items-start gap-3 px-3 py-3 text-left transition hover:bg-slate-50 ${!n.is_read ? 'bg-sky-50/70' : ''}`}
                         >
-                          <Icon className="w-4 h-4 mt-0.5 text-gray-500 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-gray-800 text-sm">{n.title}</div>
+                          <Icon className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-500" />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-slate-800">{n.title}</div>
                             {n.message && (
-                              <div className="text-xs text-gray-600 mt-1 line-clamp-2">{n.message}</div>
+                              <div className="mt-1 line-clamp-2 text-xs text-slate-600">{n.message}</div>
                             )}
-                            <div className="text-xs text-gray-500 mt-1">{new Date(n.created_at).toLocaleString()}</div>
+                            <div className="mt-1 text-xs text-slate-500">{new Date(n.created_at).toLocaleString()}</div>
                           </div>
-                          {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1"></div>}
+                          {!n.is_read && <div className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-sky-500" />}
                         </button>
                       );
                     })
@@ -236,28 +248,32 @@ const MemberMobileNav: React.FC<MemberMobileNavProps> = ({ title = 'Member Porta
           </div>
 
           <button
+            type="button"
             onClick={() => setOpen((v) => !v)}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
             aria-label="Open navigation menu"
             aria-expanded={open}
           >
-            <Menu className={`w-6 h-6 text-gray-700 transition-transform ${open ? 'rotate-90' : ''}`} />
+            <Menu className={`h-5 w-5 transition-transform ${open ? 'rotate-90' : ''}`} />
           </button>
         </div>
       </div>
 
       {open && (
-        <div className="border-t bg-white shadow-lg relative z-50">
+        <div className="relative z-50 border-t border-slate-100 bg-white shadow-lg">
           {items
             .filter((item) => hasPrivilege(item.id))
             .map((m) => (
               <button
+                type="button"
                 key={m.id}
                 onClick={() => onNavigate(m.href)}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors ${isActive(m.href) ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium transition-colors ${
+                  isActive(m.href) ? 'bg-sky-50 text-sky-800' : 'text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                <m.icon className="w-5 h-5" />
-                <span className="font-medium">{m.label}</span>
+                <m.icon className="h-5 w-5 text-slate-500" />
+                <span>{m.label}</span>
               </button>
             ))}
         </div>

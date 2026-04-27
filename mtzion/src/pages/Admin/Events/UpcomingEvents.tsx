@@ -36,7 +36,8 @@ const UpcomingEvents: React.FC = () => {
 
   useEffect(() => {
     const inv = () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.events.upcoming() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.upcoming() });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'logs', 'activity'], exact: false });
     };
     const channel = supabase
       .channel('events-upcoming')

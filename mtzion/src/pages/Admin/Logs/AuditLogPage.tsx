@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
 import { resolveAuditUserDisplay } from '../../../lib/resolveAuditUserDisplay';
+import { dateStampForFilename, downloadCsv, MAX_CSV_EXPORT_ROWS, toCsvLine } from '../../../lib/csvDownload';
 import {
   Activity,
   Database,
@@ -11,6 +12,7 @@ import {
   RefreshCw,
   Search,
   FileJson,
+  Download,
 } from 'lucide-react';
 
 type LogTable = 'activity_logs';
@@ -29,6 +31,7 @@ type AuditRow = {
 };
 
 const PAGE_SIZE = 25;
+const FETCH_CHUNK = 1000;
 
 function escapeIlike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&');
@@ -60,6 +63,35 @@ export type AuditLogPageProps = {
 
 const listQueryKey = (filterKey: string) => queryKeys.admin.activityLogList(filterKey);
 
+async function fetchAllActivityLogRows(
+  logTable: 'activity_logs',
+  search: string,
+  entityType: string
+): Promise<AuditRow[]> {
+  const all: AuditRow[] = [];
+  for (let from = 0; from < MAX_CSV_EXPORT_ROWS; from += FETCH_CHUNK) {
+    const to = from + FETCH_CHUNK - 1;
+    let q = supabase
+      .from(logTable)
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    if (entityType !== 'all') {
+      q = q.eq('entity_type', entityType);
+    }
+    if (search.trim()) {
+      const s = escapeIlike(search.trim());
+      q = q.or(`action.ilike.%${s}%,entity_type.ilike.%${s}%`);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    const batch = (data || []) as AuditRow[];
+    all.push(...batch);
+    if (batch.length < FETCH_CHUNK) break;
+  }
+  return all;
+}
+
 const AuditLogPage: React.FC<AuditLogPageProps> = ({ logTable, title, description }) => {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
@@ -67,6 +99,7 @@ const AuditLogPage: React.FC<AuditLogPageProps> = ({ logTable, title, descriptio
   const [search, setSearch] = useState('');
   const [entityType, setEntityType] = useState<string>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -130,6 +163,53 @@ const AuditLogPage: React.FC<AuditLogPageProps> = ({ logTable, title, descriptio
     }
   }, [count, page, totalPages]);
 
+  const handleExportCsv = async () => {
+    if (count === 0) return;
+    setExporting(true);
+    try {
+      const all = await fetchAllActivityLogRows(logTable, search, entityType);
+      const userIds = [...new Set(all.map((r) => r.user_id).filter((u): u is string => u != null))];
+      const labels = await resolveAuditUserDisplay(supabase, userIds);
+      const header = toCsvLine([
+        'created_at',
+        'action',
+        'entity_type',
+        'entity_id',
+        'actor',
+        'user_id',
+        'ip_address',
+        'user_agent',
+        'old_data_json',
+        'new_data_json',
+      ]);
+      const lines = all.map((r) =>
+        toCsvLine([
+          r.created_at,
+          r.action,
+          r.entity_type,
+          r.entity_id ?? '',
+          r.user_id ? (labels.get(r.user_id) ?? r.user_id) : 'System / unknown',
+          r.user_id ?? '',
+          r.ip_address ?? '',
+          r.user_agent ?? '',
+          r.old_data ? JSON.stringify(r.old_data) : '',
+          r.new_data ? JSON.stringify(r.new_data) : '',
+        ])
+      );
+      if (all.length >= MAX_CSV_EXPORT_ROWS) {
+        alert(
+          `Export is limited to ${MAX_CSV_EXPORT_ROWS.toLocaleString()} rows. Narrow search or entity filter and export again for more.`
+        );
+      }
+      downloadCsv(`activity-log-${dateStampForFilename()}.csv`, header, lines);
+    } catch (e) {
+      console.error(e);
+      alert((e as Error).message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200/80 overflow-hidden">
@@ -145,15 +225,26 @@ const AuditLogPage: React.FC<AuditLogPageProps> = ({ logTable, title, descriptio
             </div>
             <p className="text-sm text-slate-600 mt-1 max-w-2xl leading-relaxed">{description}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            disabled={isPending || isFetching}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 self-start"
-          >
-            <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-2 self-start">
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              disabled={isPending || isFetching}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExportCsv()}
+              disabled={isPending || count === 0 || exporting}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-teal-200 bg-teal-50 text-sm font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          </div>
         </div>
 
         <div className="p-4 border-b bg-gray-50/80 flex flex-col md:flex-row gap-3 md:items-end md:justify-between">

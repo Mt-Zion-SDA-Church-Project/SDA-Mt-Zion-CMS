@@ -3,9 +3,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
 import { resolveAuditUserDisplay } from '../../../lib/resolveAuditUserDisplay';
-import { LogIn, RefreshCw, Search, Clock, User, Monitor } from 'lucide-react';
+import { dateStampForFilename, downloadCsv, MAX_CSV_EXPORT_ROWS, toCsvLine } from '../../../lib/csvDownload';
+import { LogIn, RefreshCw, Search, Clock, User, Monitor, Download } from 'lucide-react';
 
 const PAGE_SIZE = 25;
+const FETCH_CHUNK = 1000;
 
 function escapeIlike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&');
@@ -31,6 +33,92 @@ function formatDuration(seconds: number | null, ended: boolean): string {
   return `${h}h ${remM}m`;
 }
 
+type SearchMode =
+  | { type: 'none' }
+  | { type: 'uuid'; id: string }
+  | { type: 'nameIds'; ids: string[] }
+  | { type: 'userAgent'; needle: string };
+
+async function resolveSearchMode(needle: string): Promise<SearchMode> {
+  const t = needle.trim();
+  if (!t) return { type: 'none' };
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) {
+    return { type: 'uuid', id: t };
+  }
+  const s = escapeIlike(t);
+  const [suRes, memRes] = await Promise.all([
+    supabase
+      .from('system_users')
+      .select('user_id')
+      .or(`full_name.ilike.%${s}%,email.ilike.%${s}%,username.ilike.%${s}%`),
+    supabase
+      .from('members')
+      .select('user_id')
+      .or(`first_name.ilike.%${s}%,last_name.ilike.%${s}%,email.ilike.%${s}%`),
+  ]);
+  const fromNames = new Set<string>();
+  (suRes.data || []).forEach((r: { user_id: string | null }) => {
+    if (r.user_id) fromNames.add(r.user_id);
+  });
+  (memRes.data || []).forEach((r: { user_id: string | null }) => {
+    if (r.user_id) fromNames.add(r.user_id);
+  });
+  if (fromNames.size > 0) {
+    return { type: 'nameIds', ids: Array.from(fromNames) };
+  }
+  return { type: 'userAgent', needle: t };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyUserLogFilters(q: any, since: string | null, status: 'all' | 'active' | 'ended', searchMode: SearchMode) {
+  let query = q;
+  if (since) {
+    query = query.gte('started_at', since);
+  }
+  if (status === 'active') {
+    query = query.is('ended_at', null);
+  } else if (status === 'ended') {
+    query = query.not('ended_at', 'is', null);
+  }
+  if (searchMode.type === 'uuid') {
+    query = query.eq('user_id', searchMode.id);
+  } else if (searchMode.type === 'nameIds') {
+    query = query.in('user_id', searchMode.ids);
+  } else if (searchMode.type === 'userAgent') {
+    query = query.ilike('user_agent', `%${escapeIlike(searchMode.needle)}%`);
+  }
+  return query;
+}
+
+async function fetchAllUserSessionRows(
+  search: string,
+  status: 'all' | 'active' | 'ended',
+  rangeDays: string
+): Promise<SessionRow[]> {
+  const range = rangeDays === 'all' ? null : Number(rangeDays);
+  const since =
+    range != null && !Number.isNaN(range)
+      ? new Date(Date.now() - range * 24 * 60 * 60 * 1000).toISOString()
+      : null;
+  const searchMode = await resolveSearchMode(search);
+  const all: SessionRow[] = [];
+  for (let from = 0; from < MAX_CSV_EXPORT_ROWS; from += FETCH_CHUNK) {
+    const to = from + FETCH_CHUNK - 1;
+    let q = supabase
+      .from('user_login_sessions')
+      .select('*')
+      .order('started_at', { ascending: false })
+      .range(from, to);
+    q = applyUserLogFilters(q, since, status, searchMode);
+    const { data, error } = await q;
+    if (error) throw error;
+    const batch = (data || []) as SessionRow[];
+    all.push(...batch);
+    if (batch.length < FETCH_CHUNK) break;
+  }
+  return all;
+}
+
 const UserLog: React.FC = () => {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
@@ -38,6 +126,7 @@ const UserLog: React.FC = () => {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'all' | 'active' | 'ended'>('all');
   const [rangeDays, setRangeDays] = useState<string>('30');
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -63,53 +152,13 @@ const UserLog: React.FC = () => {
           ? new Date(Date.now() - range * 24 * 60 * 60 * 1000).toISOString()
           : null;
 
-      const needle = search.trim();
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(needle);
-
+      const searchMode = await resolveSearchMode(search);
       let q = supabase
         .from('user_login_sessions')
         .select('*', { count: 'exact' })
         .order('started_at', { ascending: false })
         .range(from, to);
-
-      if (since) {
-        q = q.gte('started_at', since);
-      }
-      if (status === 'active') {
-        q = q.is('ended_at', null);
-      } else if (status === 'ended') {
-        q = q.not('ended_at', 'is', null);
-      }
-
-      if (needle) {
-        if (isUuid) {
-          q = q.eq('user_id', needle);
-        } else {
-          const s = escapeIlike(needle);
-          const [suRes, memRes] = await Promise.all([
-            supabase
-              .from('system_users')
-              .select('user_id')
-              .or(`full_name.ilike.%${s}%,email.ilike.%${s}%,username.ilike.%${s}%`),
-            supabase
-              .from('members')
-              .select('user_id')
-              .or(`first_name.ilike.%${s}%,last_name.ilike.%${s}%,email.ilike.%${s}%`),
-          ]);
-          const fromNames = new Set<string>();
-          (suRes.data || []).forEach((r: { user_id: string | null }) => {
-            if (r.user_id) fromNames.add(r.user_id);
-          });
-          (memRes.data || []).forEach((r: { user_id: string | null }) => {
-            if (r.user_id) fromNames.add(r.user_id);
-          });
-          if (fromNames.size > 0) {
-            q = q.in('user_id', Array.from(fromNames));
-          } else {
-            q = q.ilike('user_agent', `%${escapeIlike(needle)}%`);
-          }
-        }
-      }
+      q = applyUserLogFilters(q, since, status, searchMode);
 
       const { data: raw, error: err, count } = await q;
       if (err) throw err;
@@ -140,6 +189,51 @@ const UserLog: React.FC = () => {
     }
   }, [count, page, totalPages]);
 
+  const handleExportCsv = async () => {
+    if (count === 0) return;
+    setExporting(true);
+    try {
+      const all = await fetchAllUserSessionRows(search, status, rangeDays);
+      const userIds = [...new Set(all.map((r) => r.user_id))];
+      const labels = await resolveAuditUserDisplay(supabase, userIds);
+      const header = toCsvLine([
+        'user',
+        'user_id',
+        'signed_in',
+        'signed_out',
+        'duration_seconds',
+        'duration_display',
+        'status',
+        'user_agent',
+      ]);
+      const lines = all.map((r) => {
+        const ended = r.ended_at != null;
+        const who = labels.get(r.user_id) ?? r.user_id;
+        return toCsvLine([
+          who,
+          r.user_id,
+          r.started_at,
+          r.ended_at ?? '',
+          r.duration_seconds ?? '',
+          formatDuration(r.duration_seconds, ended),
+          ended ? 'ended' : 'active',
+          r.user_agent ?? '',
+        ]);
+      });
+      if (all.length >= MAX_CSV_EXPORT_ROWS) {
+        alert(
+          `Export is limited to ${MAX_CSV_EXPORT_ROWS.toLocaleString()} rows. Narrow filters and export again for more.`
+        );
+      }
+      downloadCsv(`user-log-${dateStampForFilename()}.csv`, header, lines);
+    } catch (e) {
+      console.error(e);
+      alert((e as Error).message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200/80 overflow-hidden">
@@ -156,15 +250,26 @@ const UserLog: React.FC = () => {
                 active or remain open until the next sign-in.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => void refetch()}
-              disabled={isPending || isFetching}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 self-start"
-            >
-              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
+            <div className="flex flex-wrap items-center gap-2 self-start">
+              <button
+                type="button"
+                onClick={() => void refetch()}
+                disabled={isPending || isFetching}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleExportCsv()}
+                disabled={isPending || count === 0 || exporting}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-sm font-medium text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                {exporting ? 'Exporting…' : 'Export CSV'}
+              </button>
+            </div>
           </div>
         </div>
 

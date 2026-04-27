@@ -274,6 +274,7 @@ const AuditLogPage: React.FC<AuditLogPageProps> = ({ logTable, title, descriptio
               <option value="members">members</option>
               <option value="events">events</option>
               <option value="visitors">visitors</option>
+              <option value="teens">children</option>
               <option value="system_users">system_users</option>
             </select>
           </div>

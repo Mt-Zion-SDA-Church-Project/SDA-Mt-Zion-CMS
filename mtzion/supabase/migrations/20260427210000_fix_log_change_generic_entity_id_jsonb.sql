@@ -1,10 +1,10 @@
 /*
-  Expand activity logging to all core business tables.
-  This keeps an audit trail for members, visitors, children (teens), events, attendance,
-  givings, and other admin-managed data.
+  Fix: log_change_generic used COALESCE(NEW.id, NEW.user_id) which errors on tables
+  without user_id (e.g. visitors) because PL/pgSQL still resolves NEW.user_id.
+
+  Derive entity_id from to_jsonb(NEW/OLD) so only present keys are read.
 */
 
--- Ensure generic logger exists (idempotent)
 CREATE OR REPLACE FUNCTION public.log_change_generic()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -59,43 +59,3 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DO $$
-DECLARE
-  t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY[
-    'families',
-    'ministries',
-    'members',
-    'member_ministries',
-    'visitors',
-    'events',
-    'attendance',
-    'tithes',
-    'offerings',
-    'sabbath_schools',
-    'teens',
-    'system_users',
-    'sabbath_resources',
-    'offertory_categories',
-    'offertory_payments',
-    'cash_offering_accounts',
-    'galleries',
-    'gallery_photos',
-    'notifications',
-    'user_login_sessions'
-  ]
-  LOOP
-    IF to_regclass(format('public.%I', t)) IS NOT NULL THEN
-      EXECUTE format('DROP TRIGGER IF EXISTS trg_%I_activity ON public.%I', t, t);
-      EXECUTE format(
-        'CREATE TRIGGER trg_%I_activity
-         AFTER INSERT OR UPDATE OR DELETE ON public.%I
-         FOR EACH ROW EXECUTE FUNCTION public.log_change_generic()',
-        t,
-        t
-      );
-    END IF;
-  END LOOP;
-END $$;

@@ -15,7 +15,7 @@ const UpcomingEvents: React.FC = () => {
 
       const { data, error: qError } = await supabase
         .from('events')
-        .select('id, title, description, event_date, event_type, location')
+        .select('id, title, description, event_date, end_date, event_type, location')
         .gte('event_date', nowIso)
         .order('event_date', { ascending: true });
 
@@ -176,6 +176,7 @@ const UpcomingEvents: React.FC = () => {
                 eventId={selectedEventForQR.id}
                 eventTitle={selectedEventForQR.title}
                 eventDate={selectedEventForQR.event_date}
+                endDate={selectedEventForQR.end_date ?? null}
                 onQRGenerated={(qrCode) => {
                   console.log('QR Code generated for:', selectedEventForQR.title);
                 }}

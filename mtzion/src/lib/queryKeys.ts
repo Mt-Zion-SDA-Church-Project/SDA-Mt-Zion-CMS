@@ -19,6 +19,10 @@ export const queryKeys = {
   },
   admin: {
     dashboardStats: () => ['admin', 'dashboard', 'stats'] as const,
+    /** `activity_logs` list + filters (key usually JSON.stringify) */
+    activityLogList: (key: string) => ['admin', 'logs', 'activity', key] as const,
+    /** `user_login_sessions` — sign-in / duration log for admins */
+    userSessionLogList: (key: string) => ['admin', 'logs', 'user', 'sessions', key] as const,
     reports: (rangeKey: string) => ['admin', 'reports', rangeKey] as const,
     /** Whether an admin may access a `user_privileges.tab_name` (e.g. financial_summaries). */
     tabAllowed: (tabName: string, authUserId: string) => ['admin', 'tabAllowed', tabName, authUserId] as const,

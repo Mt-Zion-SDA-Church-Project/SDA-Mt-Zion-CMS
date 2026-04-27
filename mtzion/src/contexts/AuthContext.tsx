@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { queryKeys } from '../lib/queryKeys';
+import { recordUserSessionStart, recordUserSessionEnd } from '../lib/userSessionLog';
 import type { User } from '../types';
 
 interface AuthContextType {
@@ -51,6 +52,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           void queryClient.invalidateQueries({ queryKey: queryKeys.auth.profile(uid) });
         }
         return;
+      }
+
+      if (event === 'SIGNED_IN' && session?.user?.id) {
+        void recordUserSessionStart(session.user.id);
       }
 
       const uid = session?.user?.id ?? null;
@@ -188,6 +193,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     console.log('Starting sign out process...');
+    const uid = authUserId;
+    if (uid) {
+      try {
+        await recordUserSessionEnd(uid);
+      } catch (e) {
+        console.warn('recordUserSessionEnd:', e);
+      }
+    }
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {

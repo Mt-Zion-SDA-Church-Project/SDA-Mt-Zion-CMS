@@ -13,6 +13,7 @@ import {
   Church,
 } from 'lucide-react';
 import churchLogo from '../assets/sda-logo.png';
+import { parseDbInstant } from '../lib/eventCheckInWindow';
 
 const CHURCH_LINE_PRIMARY = 'Seventh-day Adventist Church';
 const CHURCH_LINE_SECONDARY = 'Mt. Zion — Kigoma';
@@ -21,6 +22,8 @@ interface QRCodeGeneratorProps {
   eventId: string;
   eventTitle: string;
   eventDate: string;
+  /** When set, QR payload expires at the earlier of this time or the usual short TTL. */
+  endDate?: string | null;
   location?: string;
   onQRGenerated?: (qrCodeUrl: string) => void;
 }
@@ -33,10 +36,17 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Same instant semantics as check-in (UTC if DB string has no zone). */
+function instantFromDb(value: string): Date {
+  const ms = parseDbInstant(value);
+  return new Date(Number.isNaN(ms) ? value : ms);
+}
+
 const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
   eventId,
   eventTitle,
   eventDate,
+  endDate,
   location,
   onQRGenerated,
 }) => {
@@ -52,14 +62,27 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
   };
 
   const buildCheckinUrl = useCallback(() => {
-    const payload = JSON.stringify({
+    const fourHoursFromNow = Date.now() + 4 * 60 * 60 * 1000;
+    let expiresAt = fourHoursFromNow;
+    if (endDate != null && String(endDate).trim() !== '') {
+      const endMs = parseDbInstant(endDate);
+      if (!Number.isNaN(endMs)) {
+        expiresAt = Math.min(fourHoursFromNow, endMs);
+      }
+    }
+    const startsAtMs = parseDbInstant(eventDate);
+    const payloadObj: Record<string, unknown> = {
       eventId: eventId,
       type: 'event_checkin',
       timestamp: Date.now(),
-      expiresAt: Date.now() + 4 * 60 * 60 * 1000,
-    });
+      expiresAt,
+    };
+    if (!Number.isNaN(startsAtMs)) {
+      payloadObj.startsAt = startsAtMs;
+    }
+    const payload = JSON.stringify(payloadObj);
     return `${getCheckInSiteOrigin()}/member/qr-checkin?data=${encodeURIComponent(btoa(payload))}`;
-  }, [eventId]);
+  }, [eventId, eventDate, endDate]);
 
   const pxForSize = (s: 'small' | 'medium' | 'large') =>
     s === 'small' ? 240 : s === 'medium' ? 360 : 520;
@@ -107,7 +130,7 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
     if (!qrCodeUrl) return;
     const title = escapeHtml(eventTitle);
     const loc = location ? escapeHtml(location) : '';
-    const when = new Date(eventDate);
+    const when = instantFromDb(eventDate);
     const dateStr = escapeHtml(when.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
     const timeStr = escapeHtml(when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }));
     const logoSrc = churchLogo;
@@ -258,11 +281,11 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
               <span className="inline-flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                {new Date(eventDate).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                {instantFromDb(eventDate).toLocaleDateString(undefined, { dateStyle: 'medium' })}
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                {new Date(eventDate).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                {instantFromDb(eventDate).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
               </span>
               {location && (
                 <span className="inline-flex items-center gap-1.5 min-w-0">
@@ -271,6 +294,20 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
                 </span>
               )}
             </div>
+            {endDate != null && String(endDate).trim() !== '' ? (
+              <p className="mt-2 text-xs text-slate-600">
+                Members can check in from{' '}
+                <strong>{instantFromDb(eventDate).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</strong>
+                {' '}until{' '}
+                <strong>{instantFromDb(String(endDate)).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</strong>
+                .
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
+                Tip: set an <strong>end date and time</strong> on the event so QR check-in closes automatically when the event is over.
+                Check-in is only accepted <strong>from the event start</strong> (not before).
+              </p>
+            )}
           </div>
 
           <div>
@@ -374,7 +411,7 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({
                 <ul className="mt-2 space-y-1.5 text-sm text-slate-600">
                   <li className="flex items-start gap-2">
                     <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    {new Date(eventDate).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}
+                    {instantFromDb(eventDate).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}
                   </li>
                   {location && (
                     <li className="flex items-start gap-2">

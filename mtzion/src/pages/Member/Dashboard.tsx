@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { queryKeys } from '../../lib/queryKeys';
@@ -40,7 +40,10 @@ const emptyStats: MemberStats = {
   recentActivity: [],
 };
 
-async function fetchMemberDashboardStats(authUserId: string): Promise<MemberStats> {
+async function fetchMemberDashboardStats(
+  authUserId: string,
+  includeOfferings: boolean
+): Promise<MemberStats> {
   const { data: memberData } = await supabase
     .from('members')
     .select('id, first_name, last_name')
@@ -48,6 +51,10 @@ async function fetchMemberDashboardStats(authUserId: string): Promise<MemberStat
     .single();
 
   if (!memberData) return emptyStats;
+
+  const offeringsPromise = includeOfferings
+    ? supabase.from('offerings').select('id, amount').eq('member_id', memberData.id)
+    : Promise.resolve({ data: [] as { id: string; amount?: string }[], error: null });
 
   const [
     tithesResult,
@@ -59,7 +66,7 @@ async function fetchMemberDashboardStats(authUserId: string): Promise<MemberStat
     activityResult,
   ] = await Promise.allSettled([
     supabase.from('tithes').select('id, amount').eq('member_id', memberData.id),
-    supabase.from('offerings').select('id, amount').eq('member_id', memberData.id),
+    offeringsPromise,
     supabase.from('attendance').select('id').eq('member_id', memberData.id),
     supabase.from('member_ministries').select('id').eq('member_id', memberData.id),
     supabase
@@ -156,11 +163,27 @@ const MemberDashboard: React.FC = () => {
   const [showEventsDropdown, setShowEventsDropdown] = React.useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const portalSettingsQuery = useQuery({
+    queryKey: queryKeys.memberPortal.settings(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('member_portal_settings')
+        .select('show_offerings_on_dashboard')
+        .eq('id', 1)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.show_offerings_on_dashboard ?? true;
+    },
+    enabled: !!user?.id,
+  });
+
+  const showOfferingsOnDashboard = portalSettingsQuery.data ?? true;
+
   const dashboardQuery = useQuery({
-    queryKey: [...queryKeys.memberPortal.dashboardMe(), user?.id ?? ''] as const,
+    queryKey: [...queryKeys.memberPortal.dashboardMe(), user?.id ?? '', showOfferingsOnDashboard] as const,
     queryFn: async () => {
       try {
-        return await fetchMemberDashboardStats(user!.id);
+        return await fetchMemberDashboardStats(user!.id, showOfferingsOnDashboard);
       } catch (error) {
         console.error('Error loading member dashboard data:', error);
         return emptyStats;
@@ -170,7 +193,8 @@ const MemberDashboard: React.FC = () => {
   });
 
   const stats = dashboardQuery.data ?? emptyStats;
-  const loading = !user?.id || dashboardQuery.isLoading;
+  const loading =
+    !user?.id || portalSettingsQuery.isLoading || dashboardQuery.isLoading;
 
   useEffect(() => {
     const invalidate = () => {
@@ -202,12 +226,21 @@ const MemberDashboard: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'offerings' }, invalidate)
       .subscribe();
 
+    const portalSettingsChannel = supabase
+      .channel('member-dashboard-portal-settings')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_portal_settings' }, () => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.settings() });
+        void queryClient.invalidateQueries({ queryKey: ['member', 'dashboard', 'me'], exact: false });
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(membersChannel);
       supabase.removeChannel(eventsChannel);
       supabase.removeChannel(attendanceChannel);
       supabase.removeChannel(tithesChannel);
       supabase.removeChannel(offeringsChannel);
+      supabase.removeChannel(portalSettingsChannel);
     };
   }, [queryClient]);
 
@@ -224,45 +257,55 @@ const MemberDashboard: React.FC = () => {
     };
   }, []);
 
-  const formatCurrency = (amount: number) => {
-    const formatted = new Intl.NumberFormat('en-UG', {
-      style: 'currency',
-      currency: 'UGX',
-      maximumFractionDigits: 0,
-    }).format(amount);
-    return formatted.replace('UGX', 'USh');
-  };
+  const statCards = useMemo(() => {
+    const formatCurrency = (amount: number) => {
+      const formatted = new Intl.NumberFormat('en-UG', {
+        style: 'currency',
+        currency: 'UGX',
+        maximumFractionDigits: 0,
+      }).format(amount);
+      return formatted.replace('UGX', 'USh');
+    };
 
-  const memberStats = [
-    {
-      name: 'My Offerings',
-      value: formatCurrency(stats.myOfferings),
-      icon: Gift,
-      iconWrap: 'bg-emerald-500/12 text-emerald-600',
-      valueClass: 'text-emerald-800',
-    },
-    {
-      name: 'Events Attended',
-      value: `${stats.eventsAttended}`,
-      icon: Calendar,
-      iconWrap: 'bg-sky-500/12 text-sky-600',
-      valueClass: 'text-slate-900',
-    },
-    {
-      name: 'Birthdays',
-      value: `${stats.upcomingBirthdays.length}`,
-      icon: Heart,
-      iconWrap: 'bg-violet-500/12 text-violet-600',
-      valueClass: 'text-slate-900',
-    },
-    {
-      name: 'Activities',
-      value: `${stats.recentActivity.length}`,
-      icon: Activity,
-      iconWrap: 'bg-amber-500/12 text-amber-600',
-      valueClass: 'text-slate-900',
-    },
-  ];
+    const all: {
+      name: string;
+      value: string;
+      icon: typeof Gift;
+      iconWrap: string;
+      valueClass: string;
+    }[] = [
+      {
+        name: 'My Offerings',
+        value: formatCurrency(stats.myOfferings),
+        icon: Gift,
+        iconWrap: 'bg-emerald-500/12 text-emerald-600',
+        valueClass: 'text-emerald-800',
+      },
+      {
+        name: 'Events Attended',
+        value: `${stats.eventsAttended}`,
+        icon: Calendar,
+        iconWrap: 'bg-sky-500/12 text-sky-600',
+        valueClass: 'text-slate-900',
+      },
+      {
+        name: 'Birthdays',
+        value: `${stats.upcomingBirthdays.length}`,
+        icon: Heart,
+        iconWrap: 'bg-violet-500/12 text-violet-600',
+        valueClass: 'text-slate-900',
+      },
+      {
+        name: 'Activities',
+        value: `${stats.recentActivity.length}`,
+        icon: Activity,
+        iconWrap: 'bg-amber-500/12 text-amber-600',
+        valueClass: 'text-slate-900',
+      },
+    ];
+
+    return showOfferingsOnDashboard ? all : all.filter((s) => s.name !== 'My Offerings');
+  }, [stats, showOfferingsOnDashboard]);
 
   if (loading) {
     return (
@@ -279,8 +322,12 @@ const MemberDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 lg:gap-6">
-          {[...Array(4)].map((_, i) => (
+        <div
+          className={`grid grid-cols-2 gap-3 sm:gap-4 lg:gap-6 ${
+            portalSettingsQuery.data === false ? 'lg:grid-cols-3' : 'lg:grid-cols-4'
+          }`}
+        >
+          {[...Array(portalSettingsQuery.data === false ? 3 : 4)].map((_, i) => (
             <div
               key={i}
               className="animate-pulse rounded-2xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.03] lg:p-5"
@@ -310,11 +357,17 @@ const MemberDashboard: React.FC = () => {
       </div>
 
       <p className="text-sm leading-relaxed text-slate-600 lg:hidden">
-        Here&apos;s a snapshot of your giving, participation, and what&apos;s coming up at church.
+        {showOfferingsOnDashboard
+          ? "Here's a snapshot of your giving, participation, and what's coming up at church."
+          : "Here's a snapshot of your participation and what's coming up at church."}
       </p>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:mb-6 lg:grid-cols-4 lg:gap-6">
-        {memberStats.map((stat, index) => (
+      <div
+        className={`grid grid-cols-2 gap-3 sm:gap-4 lg:mb-6 lg:gap-6 ${
+          statCards.length >= 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'
+        }`}
+      >
+        {statCards.map((stat, index) => (
           <div
             key={index}
             className="relative rounded-2xl border border-slate-100/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.04] transition-shadow hover:shadow-md lg:p-5"

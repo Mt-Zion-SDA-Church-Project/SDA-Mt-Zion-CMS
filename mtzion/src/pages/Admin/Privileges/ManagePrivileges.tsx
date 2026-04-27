@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
-import { Shield, Users, Settings, Save, RefreshCw, Search, Filter, Zap, Eye, EyeOff } from 'lucide-react';
+import { Shield, Users, Save, RefreshCw, Search, Filter, Zap, Eye, EyeOff } from 'lucide-react';
 import PageLoader from '../../../components/Layout/PageLoader';
 import { UserPrivilege, PrivilegeTab, SystemUser, Member } from '../../../types';
+
+const MEMBER_DASHBOARD_OFFERINGS_LABEL = 'My Offerings (dashboard)';
 
 const ManagePrivileges: React.FC = () => {
   const queryClient = useQueryClient();
@@ -79,6 +81,41 @@ const ManagePrivileges: React.FC = () => {
       return { users: usersData, privileges: privilegesData };
     },
   });
+
+  const memberPortalSettingsQuery = useQuery({
+    queryKey: queryKeys.memberPortal.settings(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('member_portal_settings')
+        .select('show_offerings_on_dashboard')
+        .eq('id', 1)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.show_offerings_on_dashboard ?? true;
+    },
+    enabled: selectedUserType === 'member',
+  });
+
+  const updateMemberPortalOfferingsMutation = useMutation({
+    mutationFn: async (showOfferings: boolean) => {
+      const { error } = await supabase
+        .from('member_portal_settings')
+        .update({
+          show_offerings_on_dashboard: showOfferings,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 1);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.memberPortal.settings() });
+      void queryClient.invalidateQueries({ queryKey: ['member', 'dashboard', 'me'], exact: false });
+    },
+  });
+
+  const showMemberDashboardOfferings = memberPortalSettingsQuery.data ?? true;
+  const memberOfferingsColumnBusy =
+    memberPortalSettingsQuery.isLoading || memberPortalSettingsQuery.isFetching || updateMemberPortalOfferingsMutation.isPending;
 
   const users = data?.users ?? [];
 
@@ -196,6 +233,9 @@ const ManagePrivileges: React.FC = () => {
       });
     });
     setPrivileges(newPrivileges);
+    if (selectedUserType === 'member') {
+      updateMemberPortalOfferingsMutation.mutate(true);
+    }
   };
 
   const blockAllPrivileges = () => {
@@ -219,11 +259,17 @@ const ManagePrivileges: React.FC = () => {
       });
     });
     setPrivileges(newPrivileges);
+    if (selectedUserType === 'member') {
+      updateMemberPortalOfferingsMutation.mutate(false);
+    }
   };
 
   const resetToDefaults = () => {
     const newPrivileges = privileges.filter(p => !filteredUsers.some(user => user.id === p.user_id));
     setPrivileges(newPrivileges);
+    if (selectedUserType === 'member') {
+      updateMemberPortalOfferingsMutation.mutate(true);
+    }
   };
 
   // Column-level privilege management
@@ -261,6 +307,23 @@ const ManagePrivileges: React.FC = () => {
     });
     setPrivileges(newPrivileges);
   };
+
+  const getMemberOfferingsColumnStatus = (): 'all' | 'none' | 'mixed' => {
+    if (selectedUserType !== 'member') return 'none';
+    if (memberPortalSettingsQuery.isError) return 'none';
+    return showMemberDashboardOfferings ? 'all' : 'none';
+  };
+
+  const toggleMemberOfferingsColumn = () => {
+    const status = getMemberOfferingsColumnStatus();
+    const newValue = status === 'all' ? false : true;
+    updateMemberPortalOfferingsMutation.mutate(newValue);
+  };
+
+  const memberOfferingsColStatus =
+    selectedUserType === 'member' ? getMemberOfferingsColumnStatus() : 'none';
+  const memberOfferingsHdrChecked = memberOfferingsColStatus === 'all';
+  const memberOfferingsHdrIndeterminate = memberOfferingsColStatus === 'mixed';
 
   if (loading) {
     return (
@@ -419,6 +482,33 @@ const ManagePrivileges: React.FC = () => {
                         </th>
                       );
                     })}
+                    {selectedUserType === 'member' && (
+                      <th className="border-b p-3 text-center font-medium text-gray-700">
+                        <div className="flex flex-col items-center gap-2">
+                          <span className="text-sm">{MEMBER_DASHBOARD_OFFERINGS_LABEL}</span>
+                          <label className="inline-flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={memberOfferingsHdrChecked}
+                              ref={(el) => {
+                                if (el) el.indeterminate = memberOfferingsHdrIndeterminate;
+                              }}
+                              disabled={memberOfferingsColumnBusy || memberPortalSettingsQuery.isError}
+                              onChange={toggleMemberOfferingsColumn}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              title={`${memberOfferingsHdrChecked ? 'Hide' : 'Show'} offerings card on all member dashboards`}
+                            />
+                            <span className="ml-2 text-xs text-gray-500">
+                              {memberOfferingsHdrChecked
+                                ? 'All'
+                                : memberOfferingsHdrIndeterminate
+                                  ? 'Mixed'
+                                  : 'None'}
+                            </span>
+                          </label>
+                        </div>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -466,6 +556,24 @@ const ManagePrivileges: React.FC = () => {
                             </label>
                           </td>
                         ))}
+                        {selectedUserType === 'member' && (
+                          <td className="border-b p-3 text-center">
+                            <label className="inline-flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={showMemberDashboardOfferings}
+                                disabled={memberOfferingsColumnBusy || memberPortalSettingsQuery.isError}
+                                onChange={(e) => {
+                                  updateMemberPortalOfferingsMutation.mutate(e.target.checked);
+                                }}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="ml-2 text-sm text-gray-600">
+                                {showMemberDashboardOfferings ? 'Allowed' : 'Blocked'}
+                              </span>
+                            </label>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

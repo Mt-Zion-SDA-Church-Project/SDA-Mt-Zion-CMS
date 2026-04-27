@@ -74,6 +74,8 @@ export const queryKeys = {
     dashboard: (userId: string) => ['member', 'dashboard', userId] as const,
     /** Aggregated member dashboard stats for the signed-in user (no userId in key — invalidate on auth change). */
     dashboardMe: () => ['member', 'dashboard', 'me'] as const,
+    /** Singleton row `member_portal_settings` (e.g. show offerings on member dashboard). */
+    settings: () => ['member', 'portal', 'settings'] as const,
     resources: () => ['member', 'sabbathResources'] as const,
     offertoryCategories: () => ['member', 'offertoryCategories'] as const,
     offertoryPayment: (id: string) => ['member', 'offertoryPayment', id] as const,

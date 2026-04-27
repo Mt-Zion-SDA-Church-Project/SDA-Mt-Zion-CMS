@@ -107,6 +107,7 @@ const AddTeen: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'teens' }, () => {
         void queryClient.invalidateQueries({ queryKey: queryKeys.members.teensDetails() });
         void queryClient.invalidateQueries({ queryKey: queryKeys.addTeen.teens() });
+        void queryClient.invalidateQueries({ queryKey: ['admin', 'logs', 'activity'], exact: false });
       })
       .subscribe();
 
@@ -145,6 +146,7 @@ const AddTeen: React.FC = () => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.members.teensDetails() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.addTeen.teens() });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'logs', 'activity'], exact: false });
     },
   });
 

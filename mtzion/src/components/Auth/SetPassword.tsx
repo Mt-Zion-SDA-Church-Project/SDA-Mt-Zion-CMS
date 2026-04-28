@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -10,8 +10,61 @@ const SetPassword: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const establishSessionFromUrl = async () => {
+      setError(null);
+      try {
+        const { data: existing } = await supabase.auth.getSession();
+        if (existing.session) {
+          setInitializing(false);
+          return;
+        }
+
+        const url = new URL(window.location.href);
+        const params = url.searchParams;
+        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+
+        const code = params.get('code');
+        const tokenHash = params.get('token_hash');
+        const type = (params.get('type') as 'signup' | 'recovery' | 'email_change') || null;
+
+        if (code) {
+          const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeErr) throw exchangeErr;
+        } else if (hash.get('access_token') && hash.get('refresh_token')) {
+          const { error: setErr } = await supabase.auth.setSession({
+            access_token: hash.get('access_token')!,
+            refresh_token: hash.get('refresh_token')!,
+          });
+          if (setErr) throw setErr;
+        } else if (tokenHash && type) {
+          const { error: verifyErr } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type,
+          });
+          if (verifyErr) throw verifyErr;
+        }
+
+        const { data: after } = await supabase.auth.getSession();
+        if (!after.session) {
+          throw new Error('Auth session missing. Re-open the confirmation email link and try again.');
+        }
+
+        // Avoid re-processing one-time auth params on refresh.
+        window.history.replaceState({}, document.title, '/set-password');
+      } catch (err: any) {
+        setError(err?.message || 'Could not initialize password setup session.');
+      } finally {
+        setInitializing(false);
+      }
+    };
+
+    void establishSessionFromUrl();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,10 +159,10 @@ const SetPassword: React.FC = () => {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || initializing}
             className="w-full bg-primary text-white rounded-lg py-2.5 hover:opacity-90 disabled:opacity-60"
           >
-            {loading ? 'Updating...' : 'Set Password'}
+            {initializing ? 'Preparing...' : loading ? 'Updating...' : 'Set Password'}
           </button>
         </form>
 

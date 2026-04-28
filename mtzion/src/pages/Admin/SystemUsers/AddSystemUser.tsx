@@ -3,8 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { queryKeys } from '../../../lib/queryKeys';
 import { getAuthEmailRedirectUrl } from '../../../lib/authRedirect';
-import { UserPlus, Trash2, Edit3, Shield, Mail, Eye, EyeOff } from 'lucide-react';
-import { sendCredentialsEmail } from '../../../lib/emailService';
+import { UserPlus, Trash2, Edit3, Shield, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { formatZodError, addSystemUserFormSchema } from '../../../lib/validation';
 
 type SystemUserRow = {
@@ -29,7 +28,7 @@ const AddSystemUser: React.FC = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   const { data: users = [], isPending: loading } = useQuery({
@@ -153,22 +152,25 @@ const AddSystemUser: React.FC = () => {
     }
   };
 
-  const handleSendCredentials = async (userId: string, userData: any) => {
-    setSendingEmail(userId);
+  const handleForceReset = async (userId: string, userData: SystemUserRow) => {
+    setResettingUserId(userId);
     try {
-      const loginUrl = `${window.location.origin}/login`;
-      await sendCredentialsEmail({
-        email: userData.email,
-        username: userData.username,
-        fullName: userData.name,
-        role: userData.role,
-        loginUrl
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(userData.email, {
+        redirectTo: getAuthEmailRedirectUrl(),
       });
-      setSuccess(`Credentials email sent to ${userData.email}`);
+      if (resetErr) throw resetErr;
+      setSuccess(`Password reset email sent to ${userData.email}`);
     } catch (err: any) {
-      setError(err.message || 'Failed to send credentials email');
+      const raw = (err?.message || '').toLowerCase();
+      if (raw.includes('rate limit') || raw.includes('too many') || raw.includes('email rate limit exceeded')) {
+        setError(
+          'Email rate limit reached. Please wait a few minutes before sending another reset email for this user.'
+        );
+      } else {
+        setError(err.message || 'Failed to send password reset email');
+      }
     } finally {
-      setSendingEmail(null);
+      setResettingUserId(null);
     }
   };
 
@@ -301,12 +303,12 @@ const AddSystemUser: React.FC = () => {
                         <span>Edit User</span>
                       </button>
                       <button 
-                        onClick={() => handleSendCredentials(u.id, u)}
-                        disabled={sendingEmail === u.id}
+                        onClick={() => handleForceReset(u.id, u)}
+                        disabled={resettingUserId === u.id}
                         className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 text-xs"
                       >
-                        <Mail className="w-4 h-4" />
-                        <span>{sendingEmail === u.id ? 'Sending...' : 'Send Credentials'}</span>
+                        <KeyRound className="w-4 h-4" />
+                        <span>{resettingUserId === u.id ? 'Sending...' : 'Force Reset'}</span>
                       </button>
                     </div>
                   </td>

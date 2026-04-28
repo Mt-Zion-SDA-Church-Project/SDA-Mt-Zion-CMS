@@ -245,8 +245,16 @@ const AddTeen: React.FC = () => {
           <input name="parentsName" value={form.parentsName} onChange={handleChange} className="w-full border rounded px-3 py-2" />
         </div>
         <div>
-          <label className="block text-sm text-gray-600 mb-1">Parents mobile name</label>
-          <input name="mobile" value={form.mobile} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+          <label className="block text-sm text-gray-600 mb-1">Parent mobile number</label>
+          <input
+            name="mobile"
+            value={form.mobile}
+            onChange={handleChange}
+            className="w-full border rounded px-3 py-2"
+            inputMode="tel"
+            maxLength={14}
+            placeholder="07XXXXXXXX or +2567XXXXXXXX"
+          />
         </div>
         {error && <div className="text-sm text-red-600">{error}</div>}
         {success && <div className="text-sm text-green-600">{success}</div>}

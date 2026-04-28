@@ -417,7 +417,15 @@ const AddMember: React.FC = () => {
           </div>
           <div>
             <label className="block text-sm text-gray-600 mb-1">Mobile Number</label>
-            <input name="phone" value={form.phone} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            <input
+              name="phone"
+              value={form.phone}
+              onChange={handleChange}
+              className="w-full border rounded px-3 py-2"
+              inputMode="tel"
+              maxLength={14}
+              placeholder="07XXXXXXXX or +2567XXXXXXXX"
+            />
           </div>
         </div>
         <div>

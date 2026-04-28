@@ -155,7 +155,16 @@ const AddVisitor: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Phone</label>
-              <input required name="phone" value={form.phone} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input
+                required
+                name="phone"
+                value={form.phone}
+                onChange={handleChange}
+                className="w-full border rounded px-3 py-2"
+                inputMode="tel"
+                maxLength={14}
+                placeholder="07XXXXXXXX or +2567XXXXXXXX"
+              />
             </div>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Email</label>

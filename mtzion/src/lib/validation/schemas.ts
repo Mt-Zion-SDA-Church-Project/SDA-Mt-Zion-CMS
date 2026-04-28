@@ -1,5 +1,18 @@
 import { z } from 'zod';
 
+const normalizePhone = (value: string) => value.replace(/[\s()-]/g, '');
+const localPhonePattern = /^0\d{9}$/;
+const intlPhonePattern = /^\+[1-9]\d{0,3}\d{9}$/;
+const phoneRuleMessage =
+  'Use either 10 local digits (e.g. 07XXXXXXXX) or country code + 9 digits (e.g. +2567XXXXXXXX).';
+
+function isValidPhoneEntry(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  const normalized = normalizePhone(trimmed);
+  return localPhonePattern.test(normalized) || intlPhonePattern.test(normalized);
+}
+
 export const loginSchema = z.object({
   email: z.string().trim().min(1, 'Email is required').email('Enter a valid email address'),
   password: z.string().min(1, 'Password is required'),
@@ -29,11 +42,10 @@ export const addMemberFormSchema = z
         path: ['dateOfBirth'],
       });
     }
-    const digits = data.phone.replace(/\D/g, '');
-    if (data.phone.trim().length > 0 && digits.length < 7) {
+    if (!isValidPhoneEntry(data.phone)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Phone number looks too short',
+        message: phoneRuleMessage,
         path: ['phone'],
       });
     }
@@ -43,13 +55,22 @@ export const visitorFormSchema = z
   .object({
     firstName: z.string().trim().min(1, 'First name is required'),
     lastName: z.string().trim().min(1, 'Last name is required'),
-    phone: z.string().trim().min(7, 'Enter a valid phone number'),
+    phone: z.string().trim().min(1, 'Phone is required'),
     email: z.string().trim().email('Enter a valid email'),
     address: z.string().trim().min(3, 'Address is required'),
     dateOfBirth: z
       .string()
       .trim()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be YYYY-MM-DD'),
+  })
+  .superRefine((data, ctx) => {
+    if (!isValidPhoneEntry(data.phone)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: phoneRuleMessage,
+        path: ['phone'],
+      });
+    }
   });
 
 export const addSystemUserFormSchema = z.object({
@@ -88,11 +109,10 @@ export const addTeenFormSchema = z
     mobile: z.string(),
   })
   .superRefine((data, ctx) => {
-    const digits = data.mobile.replace(/\D/g, '');
-    if (data.mobile.trim().length > 0 && digits.length < 7) {
+    if (!isValidPhoneEntry(data.mobile)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Mobile number looks too short',
+        message: phoneRuleMessage,
         path: ['mobile'],
       });
     }

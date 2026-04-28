@@ -67,8 +67,9 @@ const AddSystemUser: React.FC = () => {
           emailRedirectTo: getAuthEmailRedirectUrl(),
           data: {
             full_name: form.fullName,
-            username: form.username
-          }
+            username: form.username,
+            role: form.role || 'admin',
+          },
         }
       });
       if (authError) throw authError;

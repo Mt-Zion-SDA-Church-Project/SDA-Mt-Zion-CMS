@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout/Layout';
 import LoginForm from './components/Auth/LoginForm';
 import PostLoginRedirect from './components/Auth/PostLoginRedirect';
+import SetPassword from './components/Auth/SetPassword';
 import EmailCredentialsChecker from './components/EmailCredentialsChecker';
 import AdminDashboard from './pages/Admin/Dashboard';
 import MemberDashboard from './pages/Member/Dashboard';
@@ -70,6 +71,7 @@ function AppRoutes() {
     return (
       <Routes>
         <Route path="/login" element={<LoginForm />} />
+        <Route path="/set-password" element={<SetPassword />} />
         {/* Allow QR deep link while logged out so ?data= is preserved and we can return after login */}
         <Route path="/member/qr-checkin" element={<MemberQRCheckIn />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -80,6 +82,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<PostLoginRedirect />} />
+      <Route path="/set-password" element={<SetPassword />} />
       
       <Route element={<Layout />}>
         {/* Admin Routes */}

@@ -224,6 +224,7 @@ const MemberDetails: React.FC = () => {
           data: {
             full_name: `${member.first_name} ${member.last_name}`.trim(),
             username: member.email.split('@')[0],
+            role,
           },
         },
       });

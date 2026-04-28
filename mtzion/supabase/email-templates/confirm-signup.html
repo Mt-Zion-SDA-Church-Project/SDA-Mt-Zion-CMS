@@ -32,11 +32,18 @@
           <tr>
             <td style="padding:30px 28px 32px;">
               <p style="margin:0 0 14px 0;font-size:16px;color:#0f172a;line-height:1.55;font-weight:600;">Confirm your email</p>
-              <p style="margin:0 0 18px 0;font-size:15px;color:#475569;line-height:1.65;">You are almost set. Click the button below to confirm your address. After confirming, you will be taken to the church portal to sign in.</p>
+              <p style="margin:0 0 18px 0;font-size:15px;color:#475569;line-height:1.65;">You are almost set. Click the button below to confirm your address. After confirming, you will be prompted to set a new password before entering the church portal.</p>
+              <div style="margin:0 0 18px 0;padding:14px 16px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;">
+                <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#0f172a;">Login details</p>
+                <p style="margin:0 0 5px 0;font-size:13px;color:#334155;"><strong>Email:</strong> {{ .Email }}</p>
+                <p style="margin:0 0 5px 0;font-size:13px;color:#334155;"><strong>Username:</strong> {{ .Data.username }}</p>
+                <p style="margin:0;font-size:13px;color:#334155;"><strong>Role:</strong> {{ .Data.role }}</p>
+              </div>
+              <p style="margin:0 0 16px 0;font-size:13px;color:#64748b;line-height:1.55;">Use the password given to you by the administrator. For security, passwords are not included in email messages.</p>
               <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:8px auto 0;">
                 <tr>
                   <td style="border-radius:10px;background:#007f98;">
-                    <a href="{{ .ConfirmationURL }}" target="_blank" rel="noopener" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;">Confirm my email &amp; go to the site</a>
+                    <a href="{{ .ConfirmationURL }}" target="_blank" rel="noopener" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;">Confirm my email &amp; set password</a>
                   </td>
                 </tr>
               </table>
